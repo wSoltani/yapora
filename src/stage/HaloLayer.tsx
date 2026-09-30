@@ -1,5 +1,6 @@
 import * as React from "react"
 
+import { setAttr } from "@/render/dom"
 import { useFrame } from "@/render/useStageRenderer"
 import type { AvatarConfig, HaloConfig } from "@/store/schema"
 
@@ -31,19 +32,33 @@ export function HaloLayer({ halo, avatar }: HaloLayerProps) {
     const amount = halo.floor + (1 - halo.floor) * level
     const path = outline.path(baseOffset + amount * halo.reactivity)
 
-    ringRef.current?.setAttribute("d", path)
-    glowRef.current?.setAttribute("d", path)
+    setAttr(ringRef.current, "d", path)
+    setAttr(glowRef.current, "d", path)
 
     // Opacity rides the same envelope as the size, so the ring brightens and
     // swells together rather than reading as two separate effects.
     const opacity =
       halo.opacityMin + (halo.opacityMax - halo.opacityMin) * amount
-    groupRef.current?.setAttribute("opacity", opacity.toFixed(3))
+    setAttr(groupRef.current, "opacity", opacity.toFixed(3))
   })
 
   if (!halo.enabled) return null
 
   const restPath = outline.path(baseOffset)
+
+  // The blur is recomputed over its whole region on every repaint, so the
+  // region hugs the furthest the ring can reach — its largest offset, half
+  // its stroke, and three standard deviations of blur — instead of covering
+  // the entire stage.
+  const box = avatarBox(avatar)
+  const reach =
+    baseOffset + halo.reactivity + halo.thickness / 2 + halo.glow * 3
+  const glowRegion = {
+    x: box.cx - box.width / 2 - reach,
+    y: box.cy - box.height / 2 - reach,
+    width: box.width + reach * 2,
+    height: box.height + reach * 2,
+  }
 
   return (
     <g ref={groupRef} data-layer="halo" opacity={halo.opacityMin}>
@@ -56,14 +71,7 @@ export function HaloLayer({ halo, avatar }: HaloLayerProps) {
               would stay the same thickness while the stage scaled, and would
               look completely different in a 400px tab and a 1080p OBS source.
             */}
-            <filter
-              id={filterId}
-              filterUnits="userSpaceOnUse"
-              x={-200}
-              y={-200}
-              width={1400}
-              height={1400}
-            >
+            <filter id={filterId} filterUnits="userSpaceOnUse" {...glowRegion}>
               <feGaussianBlur stdDeviation={halo.glow} />
             </filter>
           </defs>

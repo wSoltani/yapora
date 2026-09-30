@@ -1,5 +1,6 @@
 import * as React from "react"
 
+import { setAttr } from "@/render/dom"
 import { useFrame } from "@/render/useStageRenderer"
 import type { MouthConfig } from "@/store/schema"
 
@@ -44,8 +45,8 @@ export function MouthLayer({ mouth }: MouthLayerProps) {
       // Writing y/height rather than a CSS scaleY transform: scaling squashes
       // the rounded caps into ellipses, so a "rounded bar" stops looking
       // rounded the moment it moves.
-      rect.setAttribute("y", y.toFixed(2))
-      rect.setAttribute("height", height.toFixed(2))
+      setAttr(rect, "y", y.toFixed(2))
+      setAttr(rect, "height", height.toFixed(2))
     }
   })
 

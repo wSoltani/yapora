@@ -13,6 +13,7 @@ import {
   type Transport,
 } from "@/audio/player"
 import { Button } from "@/components/ui/button"
+import { setAttr, setText } from "@/render/dom"
 
 const POLL_MS = 250
 const WAVE_HEIGHT = 100
@@ -81,10 +82,11 @@ export function TransportBar({ track }: { track: TrackInfo }) {
     const draw = () => {
       const position = clock.now(track.duration)
       const fraction = track.duration > 0 ? position / track.duration : 0
-      playedRef.current?.setAttribute("width", String(fraction * width))
-      if (timeRef.current) {
-        timeRef.current.textContent = `${formatTime(position)} / ${formatTime(track.duration)}`
-      }
+      setAttr(playedRef.current, "width", (fraction * width).toFixed(1))
+      setText(
+        timeRef.current,
+        `${formatTime(position)} / ${formatTime(track.duration)}`
+      )
       raf = requestAnimationFrame(draw)
     }
     raf = requestAnimationFrame(draw)

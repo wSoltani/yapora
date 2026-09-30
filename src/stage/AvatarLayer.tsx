@@ -1,5 +1,6 @@
 import * as React from "react"
 
+import { setAttr } from "@/render/dom"
 import { useFrame } from "@/render/useStageRenderer"
 import type { AvatarConfig, StageConfig } from "@/store/schema"
 
@@ -41,9 +42,15 @@ export function AvatarLayer({ avatar, motion, url }: AvatarLayerProps) {
     const angle = Math.sin(time * 1.4) * motion.tilt * level
     const scale = 1 + level * motion.pop
 
-    group.setAttribute(
+    // Rounded, with signed zero folded away, so the transform stops changing
+    // once the avatar settles and the frame loop stops repainting it.
+    const f = (n: number, digits: number) =>
+      (Math.abs(n) < 0.5 * 10 ** -digits ? 0 : n).toFixed(digits)
+
+    setAttr(
+      group,
       "transform",
-      `translate(${center.x} ${center.y + dy}) rotate(${angle}) scale(${scale}) translate(${-center.x} ${-center.y})`
+      `translate(${center.x} ${f(center.y + dy, 2)}) rotate(${f(angle, 2)}) scale(${f(scale, 4)}) translate(${-center.x} ${-center.y})`
     )
   })
 

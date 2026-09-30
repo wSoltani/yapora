@@ -1,6 +1,7 @@
 import * as React from "react"
 
 import { audioEngine } from "@/audio/AudioEngine"
+import { setAttr, setStyle, setText } from "@/render/dom"
 import { useFrame } from "@/render/useStageRenderer"
 
 const METER_MIN = -70
@@ -31,28 +32,33 @@ export function LevelMeter({ gateThreshold, ceiling }: LevelMeterProps) {
   const readoutRef = React.useRef<HTMLSpanElement>(null)
 
   const peak = React.useRef({ value: METER_MIN, at: 0 })
+  const drawnAt = React.useRef(0)
 
   useFrame(({ time }) => {
     const db = audioEngine.levelDb
-    const percent = toPercent(db)
-
-    if (fillRef.current) fillRef.current.style.width = `${percent}%`
 
     // Peak hold, so a transient that lasts two frames is still readable.
     if (db > peak.current.value || time - peak.current.at > 1.2) {
       peak.current = { value: db, at: time }
     }
-    if (peakRef.current) {
-      peakRef.current.style.left = `${toPercent(peak.current.value)}%`
-    }
 
-    if (dotRef.current) {
-      dotRef.current.dataset.open = String(audioEngine.gateOpen)
-    }
-    if (readoutRef.current) {
-      readoutRef.current.textContent =
-        db <= METER_MIN ? "−∞ dB" : `${db.toFixed(1)} dB`
-    }
+    // Room noise moves the level every frame. A meter reads just as well at
+    // 30 fps and whole-percent steps, and every write it skips is a repaint
+    // the window does not have to do.
+    if (time - drawnAt.current < 1 / 30) return
+    drawnAt.current = time
+
+    setStyle(fillRef.current, "width", `${Math.round(toPercent(db))}%`)
+    setStyle(
+      peakRef.current,
+      "left",
+      `${Math.round(toPercent(peak.current.value))}%`
+    )
+    setAttr(dotRef.current, "data-open", String(audioEngine.gateOpen))
+    setText(
+      readoutRef.current,
+      db <= METER_MIN ? "−∞ dB" : `${db.toFixed(0)} dB`
+    )
   })
 
   return (
