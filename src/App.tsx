@@ -1,8 +1,10 @@
 import * as React from "react"
 import { MicOff } from "lucide-react"
 
+import { analysisLink } from "@/audio/link"
 import { useAudioSession } from "@/hooks/useAudioSession"
 import { useAvatarImage } from "@/hooks/useAvatarImage"
+import { inApp } from "@/lib/native"
 import { Stage } from "@/stage/Stage"
 import { useAppStore } from "@/store/app"
 import { useProfileStore } from "@/store/profile"
@@ -50,13 +52,20 @@ function LiveErrorBadge() {
   const micStatus = useAppStore((s) => s.micStatus)
   const showBadge = useProfileStore((s) => s.profile.ui.showErrorBadge)
 
-  const failed = micStatus === "denied" || micStatus === "error"
-  if (!showBadge || !failed) return null
+  const label =
+    micStatus === "denied"
+      ? "Mic permission denied"
+      : micStatus === "error"
+        ? "Mic unavailable"
+        : micStatus === "offline"
+          ? "Yapora app not running"
+          : null
+  if (!showBadge || !label) return null
 
   return (
     <div style={BADGE_STYLE}>
       <MicOff width={12} height={12} />
-      {micStatus === "denied" ? "Mic permission denied" : "Mic unavailable"}
+      {label}
     </div>
   )
 }
@@ -79,6 +88,13 @@ export function App() {
 
   React.useEffect(() => {
     void load()
+  }, [load])
+
+  // OBS renders a read-only copy of the app's profile, so it follows each
+  // save as it lands — tuning in the editor shows up on stream immediately.
+  React.useEffect(() => {
+    if (inApp) return
+    return analysisLink.onProfile(() => void load())
   }, [load])
 
   useAvatarImage()

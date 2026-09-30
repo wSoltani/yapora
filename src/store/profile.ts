@@ -11,7 +11,7 @@ import {
   type StageConfig,
   type UiConfig,
 } from "./schema"
-import { PROFILE_KEY, storage } from "./storage"
+import { loadProfile, saveProfile } from "./storage"
 
 /**
  * Config only. Audio levels never enter this store — a 60fps store update would
@@ -36,11 +36,11 @@ interface ProfileState {
 
 let persistTimer: ReturnType<typeof setTimeout> | undefined
 
-/** Dragging a slider fires continuously; write to IndexedDB at rest instead. */
+/** Dragging a slider fires continuously; write to disk at rest instead. */
 function schedulePersist(profile: Profile) {
   clearTimeout(persistTimer)
   persistTimer = setTimeout(() => {
-    void storage.set(PROFILE_KEY, profile)
+    void saveProfile(profile)
   }, 250)
 }
 
@@ -62,7 +62,14 @@ export const useProfileStore = create<ProfileState>((set, get) => {
     loaded: false,
 
     load: async () => {
-      const stored = await storage.get<unknown>(PROFILE_KEY)
+      let stored: unknown
+      try {
+        stored = await loadProfile()
+      } catch {
+        // OBS started before the app: render defaults for now. The profile
+        // arrives once the app is up and the stream announces a revision.
+        stored = undefined
+      }
       set({
         profile: stored ? migrateProfile(stored) : createDefaultProfile(),
         loaded: true,

@@ -1,6 +1,6 @@
 # Yapora
 
-*yap + aura* — a reactive avatar (PNGTuber) for OBS, in the browser.
+*yap + aura* — a reactive avatar (PNGTuber) for OBS, as a desktop app.
 
 An image masked into a circle, a halo ring that breathes and brightens with
 your microphone, and a symmetrical spectrum-analyser "mouth" you drag onto your
@@ -13,48 +13,33 @@ stays crisp at any Browser Source size.
 
 ```bash
 pnpm install
-pnpm stream
+pnpm app
 ```
 
-Open <http://localhost:4173>, upload an image, crop it, and position the mouth.
-Settings save as you go.
+The first run compiles the Rust side, which takes a few minutes. Upload an
+image, crop it, and position the mouth. Settings save as you go.
 
 Then set up OBS once:
 
-1. **Launch OBS with microphone flags** — see
-   [Microphone access in OBS](#microphone-access-in-obs). Without this the
-   avatar renders but never moves.
-2. **Add a Browser Source** pointed at `http://localhost:4173/?mode=live`.
-3. **Set width and height to a square** — 1000 × 1000 works well.
-4. **Leave the background transparent** so it composites over your scene.
+1. **Add a Browser Source** pointed at `http://localhost:4173/?mode=live` —
+   **Profile → OBS source** has a copy button.
+2. **Set width and height to a square** — 1000 × 1000 works well.
+3. **Leave the background transparent** so it composites over your scene.
 
-After that, streaming is one command.
+That is all. OBS needs no launch flags and no microphone permission: Yapora
+reads the microphone itself and streams the analysis to the Browser Source.
 
 ---
 
 ## Everyday use
 
-```bash
-pnpm stream
-```
+Open Yapora and leave it running while you stream. The Browser Source picks it
+up on its own — OBS can start before or after the app, and the source
+reconnects if you restart it. Close the app and the avatar eases to rest, with
+a "Yapora app not running" badge so a still avatar is never a mystery.
 
-Leave the terminal running while you stream. That is the whole routine — your
-settings live in OBS's own storage and persist between sessions.
-
-> **Use `pnpm stream`, not `pnpm dev`.**
->
-> `pnpm dev` serves on port **5173** instead of 4173, so a saved Browser Source
-> URL will not match it. More importantly, `build.target: "chrome103"` only
-> applies to `vite build` — Vite's dev server transforms at a modern target
-> regardless, so on OBS 30 and earlier the dev server can ship JavaScript that
-> CEF 103 cannot parse, which renders as a black screen with nothing in the log
-> to explain it.
->
-> `pnpm dev` is for working on Yapora itself. `pnpm stream` is for using it.
-
-The preview server uses `strictPort`, so if 4173 is already taken it fails
-loudly at launch rather than quietly moving to 4174 and leaving OBS pointed at
-a dead URL mid-stream.
+Edits in the app show up in OBS as you make them. There is one copy of your
+settings, on disk, and OBS reads it directly.
 
 ### Keyboard
 
@@ -65,39 +50,6 @@ a dead URL mid-stream.
 | Arrow keys | Nudge the mouth by 1 unit (click the gizmo first) |
 | `Shift` + arrows | Nudge by 10 |
 | `Shift` + drag a corner | Resize the mouth with locked aspect ratio |
-
----
-
-## Microphone access in OBS
-
-This is the one genuinely fiddly part, and it is an OBS limitation rather than
-something Yapora can fix from inside the page.
-
-**OBS never shows a permission prompt**, so a Browser Source's `getUserMedia`
-call is refused by default. Close OBS and relaunch it with both flags:
-
-```
-obs64.exe --enable-media-stream --use-fake-ui-for-media-stream
-```
-
-On Windows: right-click your OBS shortcut → Properties → append both flags to
-the end of the Target field.
-
-Three things the flags do **not** cover:
-
-1. **OS-level permission.** The flags bypass the *browser* prompt only. Windows
-   still needs *Settings › Privacy & security › Microphone* to allow desktop
-   apps.
-2. **The origin.** Browser Sources on a local `file://` path are blocked from
-   user media outright
-   ([obs-studio#6329](https://github.com/obsproject/obs-studio/issues/6329)).
-   Serve over `localhost` or https — which `pnpm stream` does.
-3. **Exclusive access.** If another application holds the microphone you get
-   `NotReadableError` regardless of permissions.
-
-The **Profile** tab reports live microphone status and names the specific
-failure, so you can tell a permission refusal apart from a missing device
-without guessing.
 
 ---
 
@@ -118,49 +70,30 @@ Two things break on Chrome 103, and either one collapses the page to nothing:
 Live mode is therefore styled with **inline CSS and plain SVG only** — no
 Tailwind — and the build targets `chrome103`. If you are still seeing black:
 
-- Confirm you ran `pnpm stream`, not `pnpm dev` (see above).
 - Confirm the Browser Source URL includes `?mode=live`.
-- Rebuild after pulling changes — OBS serves `dist/`, not your source tree.
+- Under `pnpm app` the source is served by Vite's dev server, which ignores
+  the `chrome103` target — see [Development](#development). An installed build
+  (`pnpm app:build`) does not have this problem.
 
 ### The avatar renders but never moves
 
-The microphone is not reaching the page. Open the Browser Source's **Interact**
-window and check the **Profile** tab, which names the exact failure. Each error
-means something different:
+Check **Profile → OBS source** in the app, which names the exact failure:
 
-| Error | Cause |
+| Message | Cause |
 | --- | --- |
-| `NotAllowedError` | Permission refused — OBS launch flags missing |
-| `NotFoundError` | No microphone — OBS lacks OS-level access |
-| `NotReadableError` | Another application holds the microphone |
-| `OverconstrainedError` | Saved device does not exist here — pick one again |
-| `SecurityError` | Blocked origin — serving from `file://` |
+| Microphone access is blocked | Windows *Settings › Privacy & security › Microphone* does not allow desktop apps |
+| No microphone found | Nothing plugged in, or Windows cannot see it |
+| The microphone is in use | Another application has exclusive access |
+| The microphone was disconnected | Unplugged mid-session — plug it back in or pick another |
+| Could not serve OBS on port 4173 | Another copy of Yapora (or something else) holds the port |
 
-Live mode also shows a small badge when the microphone fails, so a silent
-avatar is never a mystery. Switch it off in **Stage → Live mode**.
+A saved microphone that is not present falls back to the system default rather
+than failing.
 
 ### The mouth barely moves, or is a flat wall of bars
 
 Tune the noise gate — see [Tuning](#tuning). A gate set too high silences
 everything; a ceiling set too low pins every bar at maximum.
-
-### The editor looks broken inside OBS
-
-Expected on OBS 30 and earlier. The **editor** uses Tailwind, which needs
-Chrome 111, so the Interact window will look wrong even though Live mode
-renders correctly. Configure in a real browser and import the profile instead,
-or upgrade to OBS 31+ (CEF 127).
-
-### Settings I saved in Chrome are missing in OBS
-
-OBS runs its own browser storage, so nothing saved in your desktop browser
-exists inside it. Use **Profile → Export**, then import the file through the
-Browser Source's **Interact** window. The export bundles your image, so it is
-the whole look in one file.
-
-The saved microphone choice is deliberately *not* exported: device IDs are
-salted per browser profile, so one picked in Chrome cannot exist in OBS. The
-importing machine falls back to its own default.
 
 ---
 
@@ -177,7 +110,7 @@ The **Audio** tab has a live input meter with the noise gate (blue) and ceiling
 Get those two right and everything else is taste.
 
 **Test signal** swaps the microphone for a speech-shaped tone, so you can tune
-the look without talking — or without a microphone at all.
+the look without talking — or without a microphone at all. OBS sees it too.
 
 Other controls worth knowing:
 
@@ -209,12 +142,41 @@ only and never renders in Live.
 monitor drives 144 fps for a 60 fps capture. Cap it to 60 or 30 to reclaim the
 headroom on a weak machine.
 
+**Export / import** bundles settings and image into one file — for backups, or
+moving your look to another machine. The microphone choice is not carried over,
+since it names hardware on the exporting machine.
+
 ---
 
 ## How it's built
 
-React 19 + Vite + Tailwind v4 + shadcn/ui (Base UI), Zustand for config, Zod
-for profile validation and migration, IndexedDB for persistence.
+A Tauri 2 app. The frontend is React 19 + Vite + Tailwind v4 + shadcn/ui (Base
+UI), Zustand for config, Zod for profile validation and migration. The Rust
+side captures audio with `cpal`, analyses it with `rustfft`, and serves OBS
+with `axum`.
+
+```
+┌──────────── Yapora app (Rust) ────────────┐
+│ cpal mic ─► analyser (60 Hz) ─► hub ─┐    │
+│ profile.json + images/ ◄─ commands   │    │
+│                  │                   ▼    │
+│                  └──► axum on 127.0.0.1:4173
+└──────────────────────────────┬────────────┘
+        Tauri IPC (read/write) │ HTTP + WebSocket (read-only)
+        ┌──────────────────────┴───────────┐
+   app window (editor)          OBS Browser Source (?mode=live)
+```
+
+The same frontend bundle runs in both places. `src/lib/native.ts` is the one
+spot that knows which: the app window writes through Tauri commands, OBS only
+reads, over the local server.
+
+**The Rust side does capture and FFT; the page does everything you tune.** The
+analyser reimplements the Web Audio `AnalyserNode` exactly (Blackman window,
+smoothing, dB) and streams a pre-gain dB spectrum. Gain, gate, ceiling,
+envelopes and the band plan are applied in `AudioEngine`, so the editor and OBS
+react identically and profiles tuned against the old browser version behave the
+same.
 
 The architectural rule everything else follows: **audio never drives React
 state**. `AudioEngine` writes into preallocated `Float32Array`s, and a single
@@ -223,11 +185,12 @@ attributes through refs. React re-renders only when settings change — a frame
 costs a handful of attribute writes rather than a render pass.
 
 ```
-src/audio/    AudioEngine, log-frequency band plan, envelope followers, gate
-src/render/   the single rAF loop and its subscription bus
-src/stage/    the SVG stage and its three layers
-src/store/    Zod schema, profile store (persisted), app store (ephemeral)
-src/edit/     crop dialog, mouth gizmo, settings panel, profile import/export
+src/audio/        AudioEngine, analysis link, band plan, envelope followers, gate
+src/render/       the single rAF loop and its subscription bus
+src/stage/        the SVG stage and its three layers
+src/store/        Zod schema, profile store (persisted), app store (ephemeral)
+src/edit/         crop dialog, mouth gizmo, settings panel, profile import/export
+src-tauri/src/    audio capture + analyser, local server, on-disk store
 ```
 
 A few decisions worth knowing before changing things:
@@ -244,14 +207,29 @@ A few decisions worth knowing before changing things:
   nearly all speech energy in the bottom two or three bars.
 - **The editor is a lazily-loaded chunk**, so a Browser Source in Live mode
   never downloads the cropper, colour picker or settings panel.
+- **The local server binds to loopback only** and refuses WebSocket
+  connections from origins other than OBS, the app, and the dev server — the
+  frames are derived from your microphone.
+
+### Development
+
+`pnpm app` runs Vite on 5173 and the app against it, with HMR. The app's server
+on 4173 redirects page requests to Vite, and Vite proxies `/api` and `/ws` back
+to the app, so `http://localhost:4173/?mode=live` works in dev too — in a
+normal browser. OBS 30 and earlier may render it black, because Vite's dev
+server transforms at a modern target regardless of `build.target`.
+
+Rust changes restart the app automatically. `cargo test` in `src-tauri/` covers
+the analyser against known signals.
 
 ### Scripts
 
 | Script | Purpose |
 | --- | --- |
-| `pnpm stream` | Build and serve for OBS on 4173 — **use this to stream** |
-| `pnpm dev` | Dev server on 5173 with HMR — for working on Yapora |
-| `pnpm build` | Typecheck and build to `dist/` |
+| `pnpm app` | Desktop app with HMR — **use this to run Yapora** |
+| `pnpm app:build` | Build the installer into `src-tauri/target/release/bundle/` |
+| `pnpm dev` | Vite alone on 5173 — needs the app running for data and audio |
+| `pnpm build` | Typecheck and build the frontend to `dist/` |
 | `pnpm typecheck` | `tsc -b` |
 | `pnpm lint` | ESLint |
 | `pnpm format` | Prettier |
@@ -263,10 +241,8 @@ A few decisions worth knowing before changing things:
   refactor — see **Stage → Avatar motion**.
 - **`Profile` is shaped for multiple named profiles**; adding a switcher is
   additive rather than a schema migration.
-- **`src/store/storage.ts` is a four-function port** around IndexedDB — the
-  swap point for Tauri's filesystem plugin. Everything else is origin-agnostic
-  (`base: "./"`), so a Tauri build would mainly mean replacing that file and
-  dropping the terminal step from the everyday routine.
+- **Closing the window quits the app**, which stops OBS's audio. A tray icon
+  would let it keep running in the background.
 - **Crop rotation is deliberately unimplemented**; it complicates deriving the
   crop rectangle that the stage consumes as a viewBox.
 - **The profile schema is at version 2.** `migrateProfile` in

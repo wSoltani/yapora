@@ -12,8 +12,22 @@ import {
   importProfile,
   ProfileImportError,
 } from "@/edit/profileIO"
+import { invoke, inApp } from "@/lib/native"
 import { useAppStore } from "@/store/app"
 import { useProfileStore } from "@/store/profile"
+
+interface ServerInfo {
+  url: string
+  error: string | null
+}
+
+/** Outside the app (OBS, or a dev browser tab) this page is the live URL. */
+function fallbackServerInfo(): ServerInfo {
+  const url = new URL(window.location.href)
+  url.searchParams.set("mode", "live")
+  url.hash = ""
+  return { url: url.toString(), error: null }
+}
 
 export function ProfileSection() {
   const profile = useProfileStore((s) => s.profile)
@@ -25,11 +39,12 @@ export function ProfileSection() {
 
   const inputRef = React.useRef<HTMLInputElement>(null)
 
-  const liveUrl = React.useMemo(() => {
-    const url = new URL(window.location.href)
-    url.searchParams.set("mode", "live")
-    url.hash = ""
-    return url.toString()
+  const [server, setServer] = React.useState<ServerInfo>(fallbackServerInfo)
+  const liveUrl = server.url
+
+  React.useEffect(() => {
+    if (!inApp) return
+    void invoke<ServerInfo>("server_info").then(setServer)
   }, [])
 
   const handleExport = async () => {
@@ -97,9 +112,9 @@ export function ProfileSection() {
         </div>
 
         <p className="text-[10px] leading-relaxed text-muted-foreground">
-          OBS runs its own browser storage, so settings saved here don't exist
-          inside OBS. Export a profile, then import it through OBS's{" "}
-          <span className="font-medium text-foreground">Interact</span> window.
+          OBS always shows what's saved here, so there's nothing to copy across.
+          Export to back up your look &mdash; settings and image in one file
+          &mdash; or move it to another machine.
         </p>
       </SectionGroup>
 
@@ -128,30 +143,18 @@ export function ProfileSection() {
           </div>
         </Field>
 
-        <div className="rounded-md bg-muted/50 p-2.5 text-[10px] leading-relaxed text-muted-foreground">
-          <p className="mb-1 font-medium text-foreground">
-            Microphone access in OBS
-          </p>
-          <p className="mb-1.5">
-            OBS never shows a permission prompt, so a Browser Source is refused
-            by default. Close OBS and relaunch it with both flags:
-          </p>
-          <code className="mb-1.5 block rounded bg-background/80 p-1.5 break-all text-foreground">
-            obs64.exe --enable-media-stream --use-fake-ui-for-media-stream
-          </code>
-          <p className="mb-1.5">
-            On Windows: right-click your OBS shortcut, Properties, and append
-            both flags to the end of the Target field.
-          </p>
-          <p>
-            The flags only bypass the browser prompt. Windows still needs{" "}
-            <span className="font-medium text-foreground">
-              Settings &rsaquo; Privacy &amp; security &rsaquo; Microphone
-            </span>{" "}
-            to allow desktop apps, and the source must be served over localhost
-            or https &mdash; a <code>file://</code> path is blocked outright.
-          </p>
-        </div>
+        {server.error && (
+          <div className="rounded-md bg-destructive/10 p-2.5 text-[10px] leading-relaxed text-destructive">
+            {server.error}
+          </div>
+        )}
+
+        <p className="text-[10px] leading-relaxed text-muted-foreground">
+          Add a Browser Source with this URL, sized as a square (1000 &times;
+          1000 works well), and leave its background transparent. Yapora reads
+          the microphone itself and streams to OBS, so OBS needs no launch flags
+          or mic permission &mdash; just keep this app open while you stream.
+        </p>
 
         {micStatus !== "running" && (
           <div className="rounded-md bg-destructive/10 p-2.5 text-[10px] leading-relaxed text-destructive">

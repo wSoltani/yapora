@@ -102,7 +102,6 @@ export function useStageRenderer({
       if (document.visibilityState === "visible") {
         last = performance.now()
         start = last - frame.time * 1000
-        void audioEngine.resume()
       }
     }
 

@@ -5,10 +5,8 @@ import { getImage, putImage } from "@/store/storage"
  * A profile bundle is the whole look in one file: settings plus the avatar
  * image inlined as a data URL.
  *
- * This exists because OBS's browser runs on its own storage profile — anything
- * saved in the desktop browser simply does not exist inside OBS. Exporting a
- * bundle and importing it through OBS's Interact window is the bridge between
- * the two, and is also the shape Tauri will read and write directly from disk.
+ * OBS reads the app's saved profile directly, so this is for backups and for
+ * moving a look to another machine rather than for getting it into OBS.
  */
 export interface ProfileBundle {
   kind: "yapora-profile"
@@ -80,10 +78,10 @@ export async function importProfile(text: string): Promise<Profile> {
   const bundle = parsed as ProfileBundle
   const profile = migrateProfile(bundle.profile)
 
-  // Device IDs are salted per browser profile, so one captured in a desktop
-  // browser is meaningless inside OBS. Carrying it across would fail the exact
-  // constraint on the very first start — clearing it lets the importing
-  // machine pick its own default.
+  // A device ID names hardware on the exporting machine, and older exports
+  // carry browser-salted IDs that match nothing at all. Clearing it lets the
+  // importing machine start on its own default instead of reporting a missing
+  // device.
   profile.audio.deviceId = null
 
   if (bundle.image) {

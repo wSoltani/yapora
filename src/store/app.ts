@@ -1,9 +1,10 @@
 import { create } from "zustand"
 
+import type { EngineStatus } from "@/audio/AudioEngine"
+
 export type AppMode = "edit" | "live"
 
-export type MicStatus =
-  "idle" | "requesting" | "running" | "suspended" | "denied" | "error"
+export type MicStatus = EngineStatus
 
 export interface MicDevice {
   deviceId: string
