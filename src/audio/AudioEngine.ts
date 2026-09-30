@@ -111,7 +111,7 @@ class AudioEngine {
   async start(
     config: AudioConfig,
     source: AudioSource,
-    deviceId: string | null
+    devices: { mic: string | null; output: string | null }
   ) {
     this.config = config
     this.applyConfig(config)
@@ -126,7 +126,8 @@ class AudioEngine {
     this.emit("requesting")
     try {
       const status = await invoke<LinkStatus>("audio_start", {
-        deviceId,
+        deviceId: devices.mic,
+        outputDeviceId: devices.output,
         source,
         fftSize: config.fftSize,
         smoothing: config.smoothing,

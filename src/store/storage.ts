@@ -57,6 +57,7 @@ export interface AppSettings {
   obsEnabled: boolean
   activeProfile: string | null
   micDevice: string | null
+  outputDevice: string | null
 }
 
 export async function getSettings(): Promise<AppSettings | null> {
@@ -65,6 +66,10 @@ export async function getSettings(): Promise<AppSettings | null> {
 
 export async function setMicDevice(deviceId: string | null): Promise<void> {
   await invoke("set_mic_device", { deviceId })
+}
+
+export async function setOutputDevice(deviceId: string | null): Promise<void> {
+  await invoke("set_output_device", { deviceId })
 }
 
 /**

@@ -46,6 +46,8 @@ pub struct Settings {
   /// The microphone names hardware on this machine, so it belongs to the
   /// app rather than to any one look. `None` is the system default.
   pub mic_device: Option<String>,
+  /// Where audio files play, for the same reason. `None` is the default.
+  pub output_device: Option<String>,
 }
 
 impl Default for Settings {
@@ -54,6 +56,7 @@ impl Default for Settings {
       obs_enabled: true,
       active_profile: None,
       mic_device: None,
+      output_device: None,
     }
   }
 }

@@ -94,9 +94,15 @@ fn audio_devices() -> Vec<DeviceInfo> {
 }
 
 #[tauri::command]
+fn audio_output_devices() -> Vec<DeviceInfo> {
+  audio::list_output_devices()
+}
+
+#[tauri::command]
 async fn audio_start(
   app: State<'_, App>,
   device_id: Option<String>,
+  output_device_id: Option<String>,
   source: SourceKind,
   fft_size: usize,
   smoothing: f32,
@@ -106,6 +112,7 @@ async fn audio_start(
       .audio
       .start(StartRequest {
         device_id,
+        output_device_id,
         source,
         fft_size,
         smoothing,
@@ -199,6 +206,16 @@ fn set_mic_device(app: State<'_, App>, device_id: Option<String>) -> Result<(), 
     .update_settings(|settings| settings.mic_device = device_id)
     .map(drop)
     .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_output_device(app: State<'_, App>, device_id: Option<String>) -> Result<(), String> {
+  app
+    .store
+    .update_settings(|settings| settings.output_device = device_id.clone())
+    .map_err(|e| e.to_string())?;
+  app.audio.set_output_device(device_id);
+  Ok(())
 }
 
 #[derive(Serialize)]
@@ -362,6 +379,8 @@ pub fn run() {
       set_obs_enabled,
       audio_subscribe,
       audio_devices,
+      audio_output_devices,
+      set_output_device,
       audio_start,
       audio_configure,
       audio_stop,

@@ -51,6 +51,8 @@ pub enum SourceKind {
 
 pub struct StartRequest {
   pub device_id: Option<String>,
+  /// Where a file source plays; `None` is the system default.
+  pub output_device_id: Option<String>,
   pub source: SourceKind,
   pub fft_size: usize,
   pub smoothing: f32,
@@ -63,6 +65,8 @@ enum Command {
   TrackLoaded,
   /// Start file playback, reopening the speakers first if they failed.
   Play(oneshot::Sender<Result<(), String>>),
+  /// Change where files play, switching over mid-playback if needed.
+  SetOutputDevice(Option<String>),
   Stop,
 }
 
@@ -87,6 +91,10 @@ impl AudioHandle {
 
   pub fn track_loaded(&self) {
     let _ = self.tx.send(Command::TrackLoaded);
+  }
+
+  pub fn set_output_device(&self, device_id: Option<String>) {
+    let _ = self.tx.send(Command::SetOutputDevice(device_id));
   }
 
   /// Plays the loaded file. Fails only if the speakers cannot be opened.
@@ -130,6 +138,18 @@ pub fn list_devices() -> Vec<DeviceInfo> {
   let Ok(devices) = host.input_devices() else {
     return Vec::new();
   };
+  describe_devices(devices)
+}
+
+pub fn list_output_devices() -> Vec<DeviceInfo> {
+  let host = cpal::default_host();
+  let Ok(devices) = host.output_devices() else {
+    return Vec::new();
+  };
+  describe_devices(devices)
+}
+
+fn describe_devices(devices: impl Iterator<Item = cpal::Device>) -> Vec<DeviceInfo> {
   devices
     .filter_map(|device| {
       Some(DeviceInfo {
@@ -170,6 +190,7 @@ enum Source {
 struct Worker {
   hub: Arc<Hub>,
   player: SharedPlayer,
+  output_device: Option<String>,
   analyser: Analyser,
   source: Source,
   samples: Vec<f32>,
@@ -181,6 +202,7 @@ impl Worker {
     Self {
       hub,
       player,
+      output_device: None,
       analyser: Analyser::new(2048, 0.6),
       source: Source::None,
       samples: Vec::new(),
@@ -228,6 +250,21 @@ impl Worker {
       Command::Play(reply) => {
         let _ = reply.send(self.play());
       }
+      Command::SetOutputDevice(device_id) => {
+        self.output_device = device_id;
+        if let Source::File { stream } = &mut self.source {
+          // Close the old device before opening the new one.
+          *stream = None;
+          let error = match file::open_output(&self.player, self.output_device.as_deref()) {
+            Ok(opened) => {
+              *stream = Some(opened);
+              None
+            }
+            Err(err) => Some(speakers_error(&err)),
+          };
+          self.hub.set_status(self.file_status(error));
+        }
+      }
       Command::Stop => {
         self.source = Source::None;
         self.analyser.reset();
@@ -242,6 +279,7 @@ impl Worker {
     self.source = Source::None;
     self.analyser.reset();
     self.analyser.configure(request.fft_size, request.smoothing);
+    self.output_device = request.output_device_id;
     // Switching sources never leaves a file playing in the background, and
     // coming back to it resumes paused at the same spot.
     {
@@ -263,7 +301,7 @@ impl Worker {
         // A failure to open the speakers here is not fatal: they are often
         // briefly unavailable while Windows switches devices, and play
         // tries again.
-        let (stream, error) = match file::open_output(&self.player) {
+        let (stream, error) = match file::open_output(&self.player, self.output_device.as_deref()) {
           Ok(stream) => (Some(stream), None),
           Err(err) => (None, Some(speakers_error(&err))),
         };
@@ -323,7 +361,7 @@ impl Worker {
       return Err("Switch the source to Audio file first.".into());
     };
     if stream.is_none() {
-      match file::open_output(&self.player) {
+      match file::open_output(&self.player, self.output_device.as_deref()) {
         Ok(opened) => *stream = Some(opened),
         Err(err) => {
           let message = speakers_error(&err);

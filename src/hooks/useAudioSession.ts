@@ -1,7 +1,11 @@
 import * as React from "react"
 
 import { audioEngine } from "@/audio/AudioEngine"
-import { listMicDevices, onDeviceChange } from "@/audio/devices"
+import {
+  listMicDevices,
+  listOutputDevices,
+  onDeviceChange,
+} from "@/audio/devices"
 import { loadedTrack } from "@/audio/player"
 import { inApp } from "@/lib/native"
 import { useAppStore } from "@/store/app"
@@ -21,6 +25,7 @@ export function useAudioSession(enabled: boolean) {
   const loadSettings = useAppStore((s) => s.loadSettings)
   const setMicStatus = useAppStore((s) => s.setMicStatus)
   const setDevices = useAppStore((s) => s.setDevices)
+  const setOutputDevices = useAppStore((s) => s.setOutputDevices)
 
   React.useEffect(() => {
     return audioEngine.subscribe((status, error) => {
@@ -41,11 +46,12 @@ export function useAudioSession(enabled: boolean) {
   // Every other setting is applied in place.
   React.useEffect(() => {
     if (!enabled || !loaded || micDevice === undefined) return
-    void audioEngine.start(
-      useProfileStore.getState().profile.audio,
-      source,
-      micDevice
-    )
+    void audioEngine.start(useProfileStore.getState().profile.audio, source, {
+      mic: micDevice,
+      // Read rather than depended on: changing it switches playback over in
+      // place, without restarting the source.
+      output: useAppStore.getState().outputDevice,
+    })
   }, [enabled, loaded, source, micDevice])
 
   React.useEffect(() => {
@@ -55,10 +61,13 @@ export function useAudioSession(enabled: boolean) {
 
   React.useEffect(() => {
     if (!enabled) return
-    const refresh = () => void listMicDevices().then(setDevices)
+    const refresh = () => {
+      void listMicDevices().then(setDevices)
+      void listOutputDevices().then(setOutputDevices)
+    }
     refresh()
     return onDeviceChange(refresh)
-  }, [enabled, setDevices])
+  }, [enabled, setDevices, setOutputDevices])
 
   React.useEffect(() => {
     return () => {

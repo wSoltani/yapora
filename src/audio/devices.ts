@@ -11,6 +11,16 @@ export async function listMicDevices(): Promise<MicDevice[]> {
   }
 }
 
+/** Speakers, headphones and virtual cables an audio file can play through. */
+export async function listOutputDevices(): Promise<MicDevice[]> {
+  if (!inApp) return []
+  try {
+    return await invoke<MicDevice[]>("audio_output_devices")
+  } catch {
+    return []
+  }
+}
+
 const POLL_MS = 3000
 
 /**

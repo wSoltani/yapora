@@ -15,7 +15,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Field, SectionGroup, SliderField } from "@/edit/controls"
 import { LevelMeter } from "@/edit/LevelMeter"
-import { useAppStore, type AudioSource } from "@/store/app"
+import { useAppStore, type AudioSource, type MicDevice } from "@/store/app"
 import { useProfileStore } from "@/store/profile"
 
 const FFT_SIZES = [512, 1024, 2048, 4096] as const
@@ -29,6 +29,9 @@ const SOURCES = [
 function FileSource() {
   const track = useAppStore((s) => s.track)
   const setTrack = useAppStore((s) => s.setTrack)
+  const outputDevices = useAppStore((s) => s.outputDevices)
+  const outputDevice = useAppStore((s) => s.outputDevice)
+  const setOutputDevice = useAppStore((s) => s.setOutputDevice)
   const [loading, setLoading] = React.useState(false)
 
   const choose = async () => {
@@ -66,11 +69,63 @@ function FileSource() {
             ? "Choose another file"
             : "Choose audio file"}
       </Button>
+      <DeviceSelect
+        label="Playback device"
+        devices={outputDevices}
+        value={outputDevice}
+        onChange={setOutputDevice}
+      />
       <p className="text-[10px] leading-relaxed text-muted-foreground">
-        Plays through your speakers and drives the avatar as if you were
-        talking. Use the player on the stage to play, pause and scrub.
+        Plays through the device above and drives the avatar as if you were
+        talking. Use the player on the stage to play, pause and scrub. To bring
+        the sound into OBS, play it to a virtual cable and capture that.
       </p>
     </div>
+  )
+}
+
+/** A device picker whose first entry follows the system default. */
+function DeviceSelect({
+  label,
+  devices,
+  value,
+  onChange,
+}: {
+  label: string
+  devices: MicDevice[]
+  value: string | null
+  onChange: (deviceId: string | null) => void
+}) {
+  return (
+    <Field label={label}>
+      <Select
+        value={value ?? "default"}
+        onValueChange={(next) =>
+          onChange(next === "default" ? null : String(next))
+        }
+        items={[
+          { label: "System default", value: "default" },
+          ...devices.map((device) => ({
+            label: device.label,
+            value: device.deviceId,
+          })),
+        ]}
+      >
+        <SelectTrigger className="h-8 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="default">System default</SelectItem>
+          {devices
+            .filter((device) => device.deviceId !== "default")
+            .map((device) => (
+              <SelectItem key={device.deviceId} value={device.deviceId}>
+                {device.label}
+              </SelectItem>
+            ))}
+        </SelectContent>
+      </Select>
+    </Field>
   )
 }
 
@@ -135,35 +190,12 @@ export function AudioSection() {
         {source === "file" && <FileSource />}
 
         {source === "mic" && (
-          <Field label="Microphone">
-            <Select
-              value={micDevice ?? "default"}
-              onValueChange={(value) =>
-                setMicDevice(value === "default" ? null : String(value))
-              }
-              items={[
-                { label: "System default", value: "default" },
-                ...devices.map((device) => ({
-                  label: device.label,
-                  value: device.deviceId,
-                })),
-              ]}
-            >
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="default">System default</SelectItem>
-                {devices
-                  .filter((device) => device.deviceId !== "default")
-                  .map((device) => (
-                    <SelectItem key={device.deviceId} value={device.deviceId}>
-                      {device.label}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          <DeviceSelect
+            label="Microphone"
+            devices={devices}
+            value={micDevice ?? null}
+            onChange={setMicDevice}
+          />
         )}
 
         <SliderField

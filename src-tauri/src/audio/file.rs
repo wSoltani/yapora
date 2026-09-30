@@ -183,11 +183,18 @@ pub fn lock(player: &SharedPlayer) -> std::sync::MutexGuard<'_, Player> {
   player.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Opens the default output device and plays whatever the player holds.
-pub fn open_output(player: &SharedPlayer) -> Result<cpal::Stream, cpal::Error> {
+/// Opens an output device and plays whatever the player holds. A saved device
+/// that is no longer present falls back to the system default, the same way
+/// the microphone does.
+pub fn open_output(
+  player: &SharedPlayer,
+  device_id: Option<&str>,
+) -> Result<cpal::Stream, cpal::Error> {
   let host = cpal::default_host();
-  let device = host
-    .default_output_device()
+  let device = device_id
+    .and_then(|id| id.parse().ok())
+    .and_then(|id| host.device_by_id(&id))
+    .or_else(|| host.default_output_device())
     .ok_or(cpal::Error::from(ErrorKind::DeviceNotAvailable))?;
   let config = device.default_output_config()?;
 

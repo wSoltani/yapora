@@ -3,7 +3,7 @@ import { create } from "zustand"
 import type { EngineStatus } from "@/audio/AudioEngine"
 import type { TrackInfo } from "@/audio/player"
 
-import { getSettings, setMicDevice } from "./storage"
+import { getSettings, setMicDevice, setOutputDevice } from "./storage"
 
 export type AppMode = "edit" | "live"
 
@@ -35,6 +35,9 @@ interface AppState {
    * the engine waits rather than opening the wrong device first.
    */
   micDevice: string | null | undefined
+  outputDevices: MicDevice[]
+  /** Where audio files play, also app-wide. `null` is the system default. */
+  outputDevice: string | null
   source: AudioSource
   /** The file loaded for the "file" source, if any. */
   track: TrackInfo | null
@@ -47,6 +50,8 @@ interface AppState {
   setMicStatus: (status: MicStatus, error?: string | null) => void
   setDevices: (devices: MicDevice[]) => void
   setMicDevice: (deviceId: string | null) => void
+  setOutputDevices: (devices: MicDevice[]) => void
+  setOutputDevice: (deviceId: string | null) => void
   loadSettings: () => Promise<void>
   setSource: (source: AudioSource) => void
   setTrack: (track: TrackInfo | null) => void
@@ -71,6 +76,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   micError: null,
   devices: [],
   micDevice: undefined,
+  outputDevices: [],
+  outputDevice: null,
   source: "mic",
   track: null,
   selection: null,
@@ -96,9 +103,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ micDevice })
     void setMicDevice(micDevice)
   },
+  setOutputDevices: (outputDevices) => set({ outputDevices }),
+  setOutputDevice: (outputDevice) => {
+    set({ outputDevice })
+    // The app switches playback over live; no need to restart the source.
+    void setOutputDevice(outputDevice)
+  },
   loadSettings: async () => {
     const settings = await getSettings()
-    set({ micDevice: settings?.micDevice ?? null })
+    set({
+      micDevice: settings?.micDevice ?? null,
+      outputDevice: settings?.outputDevice ?? null,
+    })
   },
   setSource: (source) => set({ source }),
   setTrack: (track) => set({ track }),
