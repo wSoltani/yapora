@@ -24,6 +24,12 @@ Turn any image into an audio-reactive avatar.
 Choose your frame shape, add a halo that pulses with your voice, and drag a spectrum-analyzer "mouth" right into place.
 Stream it live directly to OBS, or drop in an audio file to render a finished video.
 
+<div align="center">
+  
+[Yapora Sample.webm](https://github.com/user-attachments/assets/26cfe857-c15f-4745-8428-a7dc785301e6)
+
+</div>
+
 ## Install
 
 Build the installer with `pnpm app:build` (see [Development](#development)) and
