@@ -1,28 +1,12 @@
 import { useStageRenderer } from "@/render/useStageRenderer"
 import { useAppStore } from "@/store/app"
 import { useProfileStore } from "@/store/profile"
-import { STAGE_CENTER, STAGE_SIZE, type StageConfig } from "@/store/schema"
+import { STAGE_CENTER, STAGE_SIZE } from "@/store/schema"
 
 import { AvatarLayer } from "./AvatarLayer"
+import { backgroundCss } from "./background"
 import { HaloLayer } from "./HaloLayer"
 import { MouthLayer } from "./MouthLayer"
-
-/** A dark, neutral green that keys cleanly and is far from most skin tones. */
-const CHROMA_GREEN = "#00b140"
-
-function backgroundCss(stage: StageConfig): string | undefined {
-  switch (stage.background) {
-    case "black":
-      return "#000000"
-    case "green":
-      return CHROMA_GREEN
-    case "custom":
-      return stage.customColor
-    case "transparent":
-    default:
-      return undefined
-  }
-}
 
 interface StageProps {
   className?: string

@@ -23,6 +23,7 @@
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
     "lucide-react": "^1.47.0",
+    "mediabunny": "^1.60.0",
     "react": "^19.2.8",
     "react-colorful": "^5.8.1",
     "react-dom": "^19.2.8",

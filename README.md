@@ -129,6 +129,21 @@ the stage: play/pause (or Space), and click or drag the waveform to seek.
 Pausing freezes the avatar at that moment, and seeking while paused shows the
 avatar as it looks there. OBS sees all three.
 
+---
+
+## Making videos
+
+Load an audio file (**Audio → Source → Audio file**), tune the look against it
+with the player, then **Output → Video → Export video**. Pick a size (square,
+16:9 or 9:16), 30 or 60 fps, and MP4 (H.264 + AAC) or WebM (VP9 + Opus) —
+only formats this machine can encode are offered.
+
+Export renders frame by frame rather than recording the screen, so it never
+drops frames, keeps audio and video exactly in sync, and runs faster than real
+time. It replays the preview's analysis on the same 60 Hz grid, so the video
+moves the way the preview did. Video has no transparency: a transparent
+background exports as green screen (`#00b140`) for keying.
+
 Other controls worth knowing:
 
 - **Attack / release** — fast attack with slow release is what reads as alive
@@ -149,7 +164,7 @@ Other controls worth knowing:
 | **Mouth** | Position and size, bar count, spacing, cap rounding, symmetry, colour, backdrop |
 | **Audio** | Source (mic, test signal, audio file), device, gain, gate, ceiling, attack/release, spectrum |
 | **Stage** | Background, overall scale, avatar motion, frame cap, error badge |
-| **Output** | Stream to OBS on/off, Browser Source URL |
+| **Output** | Stream to OBS on/off, Browser Source URL, video export |
 | **Profile** | Name, new/duplicate/delete, export/import, reset |
 
 **Backgrounds:** transparent (default, for OBS), black, green (`#00b140`, for
@@ -208,6 +223,7 @@ src/render/       the single rAF loop and its subscription bus
 src/stage/        the SVG stage and its three layers
 src/store/        Zod schema, profile store (persisted), app store (ephemeral)
 src/edit/         crop dialog, mouth gizmo, settings panel, profile import/export
+src/export/       canvas stage renderer and the WebCodecs/mediabunny export loop
 src-tauri/src/    audio capture + analyser, local server, on-disk store
 ```
 

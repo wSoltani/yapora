@@ -182,6 +182,20 @@ export const UiSchema = z.object({
   showCheckerboard: z.boolean().default(true),
 })
 
+export const ExportSize = z.enum(["square", "landscape", "portrait"])
+export const VideoFormat = z.enum(["mp4", "webm"])
+
+/**
+ * Video export settings. Per profile, since profiles are looks for different
+ * purposes — a vertical-video profile keeps 9:16 while the stream one doesn't.
+ */
+export const ExportSchema = z.object({
+  size: ExportSize.default("square"),
+  fps: z.union([z.literal(30), z.literal(60)]).default(30),
+  /** Preferred; falls back to what this machine can encode. */
+  format: VideoFormat.default("mp4"),
+})
+
 export const ProfileSchema = z.object({
   version: z.number().int().default(PROFILE_VERSION),
   id: z.string().default("default"),
@@ -192,6 +206,7 @@ export const ProfileSchema = z.object({
   audio: AudioSchema.prefault({}),
   stage: StageSchema.prefault({}),
   ui: UiSchema.prefault({}),
+  export: ExportSchema.prefault({}),
 })
 
 export type Profile = z.infer<typeof ProfileSchema>
@@ -201,6 +216,7 @@ export type MouthConfig = z.infer<typeof MouthSchema>
 export type AudioConfig = z.infer<typeof AudioSchema>
 export type StageConfig = z.infer<typeof StageSchema>
 export type UiConfig = z.infer<typeof UiSchema>
+export type ExportConfig = z.infer<typeof ExportSchema>
 
 export function createDefaultProfile(): Profile {
   return ProfileSchema.parse({})

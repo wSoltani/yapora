@@ -8,6 +8,7 @@
 
 mod analyser;
 pub mod file;
+pub mod offline;
 mod synthetic;
 
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -27,8 +28,9 @@ use file::SharedPlayer;
 use synthetic::Synthetic;
 
 /// Analysis rate. The page smooths per frame on top of this, so it animates at
-/// the display's refresh rate regardless.
-const TICK: Duration = Duration::from_micros(16_667);
+/// the display's refresh rate regardless. Export replays the same grid.
+const TICKS_PER_SECOND: u32 = 60;
+const TICK: Duration = Duration::from_micros(1_000_000 / TICKS_PER_SECOND as u64);
 
 /// Cap on samples buffered between ticks, so a stalled tick cannot grow the
 /// queue without bound. A quarter second is far more than one tick needs.
@@ -434,7 +436,7 @@ impl Worker {
 /// Frame layout, little-endian f32s: `[rmsDb, sampleRate, ...spectrumDb]`.
 /// Both values are pre-gain; the page applies gain as a dB offset, which is
 /// exact because gain scales every magnitude linearly.
-fn encode_frame(rms_db: f32, sample_rate: f32, spectrum: &[f32]) -> Bytes {
+pub(crate) fn encode_frame(rms_db: f32, sample_rate: f32, spectrum: &[f32]) -> Bytes {
   let mut bytes = Vec::with_capacity((spectrum.len() + 2) * 4);
   bytes.extend_from_slice(&rms_db.to_le_bytes());
   bytes.extend_from_slice(&sample_rate.to_le_bytes());

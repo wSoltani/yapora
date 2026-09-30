@@ -4,6 +4,7 @@ import { setAttr } from "@/render/dom"
 import { useFrame } from "@/render/useStageRenderer"
 import type { AvatarConfig, StageConfig } from "@/store/schema"
 
+import { avatarMotion } from "./motion"
 import { avatarBox, ShapeOutline } from "./shape"
 
 interface AvatarLayerProps {
@@ -31,16 +32,14 @@ export function AvatarLayer({ avatar, motion, url }: AvatarLayerProps) {
     const group = groupRef.current
     if (!group) return
 
-    if (motion.bounce === 0 && motion.tilt === 0 && motion.pop === 0) {
+    const moved = avatarMotion(motion, level, time)
+    if (!moved) {
       if (group.getAttribute("transform") !== null) {
         group.removeAttribute("transform")
       }
       return
     }
-
-    const dy = -level * motion.bounce
-    const angle = Math.sin(time * 1.4) * motion.tilt * level
-    const scale = 1 + level * motion.pop
+    const { dy, angle, scale } = moved
 
     // Rounded, with signed zero folded away, so the transform stops changing
     // once the avatar settles and the frame loop stops repainting it.

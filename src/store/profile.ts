@@ -12,6 +12,7 @@ import {
   type Profile,
   type StageConfig,
   type UiConfig,
+  type ExportConfig,
 } from "./schema"
 import {
   deleteProfile,
@@ -50,6 +51,7 @@ interface ProfileState {
   setAudio: (patch: Partial<AudioConfig>) => void
   setStage: (patch: Partial<StageConfig>) => void
   setUi: (patch: Partial<UiConfig>) => void
+  setExport: (patch: Partial<ExportConfig>) => void
   setName: (name: string) => void
 }
 
@@ -207,6 +209,7 @@ export const useProfileStore = create<ProfileState>((set, get) => {
     setAudio: (value) => patch("audio", value),
     setStage: (value) => patch("stage", value),
     setUi: (value) => patch("ui", value),
+    setExport: (value) => patch("export", value),
     setName: (name) => {
       const next = { ...get().profile, name }
       set({

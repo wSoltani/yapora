@@ -4,7 +4,9 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Separator } from "@/components/ui/separator"
 import { Field, SectionGroup, SwitchField } from "@/edit/controls"
+import { VideoExport } from "@/edit/VideoExport"
 import { invoke, inApp } from "@/lib/native"
 
 interface ServerInfo {
@@ -94,6 +96,15 @@ export function OutputSection() {
           </>
         )}
       </SectionGroup>
+
+      {inApp && (
+        <>
+          <Separator />
+          <SectionGroup title="Video">
+            <VideoExport />
+          </SectionGroup>
+        </>
+      )}
     </div>
   )
 }

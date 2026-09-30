@@ -1,4 +1,5 @@
 mod audio;
+mod export;
 mod hub;
 mod server;
 mod store;
@@ -12,6 +13,7 @@ use tauri::{Manager, State};
 
 use audio::file::{self, TrackInfo};
 use audio::{AudioHandle, DeviceInfo, SourceKind, StartRequest};
+use export::{ExportInfo, ExportSession};
 use hub::{AudioStatus, Hub};
 use server::{ObsServer, ServerInfo};
 use store::{ProfileSummary, Settings, Store, valid_profile_id};
@@ -23,6 +25,80 @@ struct App {
   obs: Arc<ObsServer>,
   /// The editor window's audio feed; replaced when the page reloads.
   feed: Mutex<Option<JoinHandle<()>>>,
+  /// The video export in progress, if any.
+  export: Mutex<Option<ExportSession>>,
+}
+
+fn export_session(app: &App) -> std::sync::MutexGuard<'_, Option<ExportSession>> {
+  app.export.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Starts an export of the loaded audio file to `path`, replacing any export
+/// left behind by a page that reloaded mid-way.
+#[tauri::command]
+fn export_begin(
+  app: State<'_, App>,
+  path: String,
+  fft_size: usize,
+  smoothing: f32,
+) -> Result<ExportInfo, String> {
+  let track = file::lock(&app.audio.player)
+    .track
+    .clone()
+    .ok_or("Choose an audio file first: Audio → Source → Audio file.")?;
+  if let Some(stale) = export_session(&app).take() {
+    stale.abort();
+  }
+  let session = ExportSession::create(track, path.into(), fft_size, smoothing)
+    .map_err(|e| format!("Could not create that file: {e}"))?;
+  let info = session.info();
+  *export_session(&app) = Some(session);
+  Ok(info)
+}
+
+fn with_export<T>(app: &App, f: impl FnOnce(&mut ExportSession) -> T) -> Result<T, String> {
+  export_session(app)
+    .as_mut()
+    .map(f)
+    .ok_or_else(|| "No export in progress.".to_string())
+}
+
+#[tauri::command]
+fn export_analysis(app: State<'_, App>, fps: f64, start: u32, count: u32) -> Result<Response, String> {
+  with_export(&app, |s| Response::new(s.analysis(fps, start, count)))
+}
+
+#[tauri::command]
+fn export_pcm(app: State<'_, App>, start: usize, count: usize) -> Result<Response, String> {
+  with_export(&app, |s| Response::new(s.pcm(start, count)))
+}
+
+/// A chunk of the encoded file, as a raw body with its offset in a header.
+#[tauri::command]
+fn export_write(app: State<'_, App>, request: Request<'_>) -> Result<(), String> {
+  let InvokeBody::Raw(bytes) = request.body() else {
+    return Err("expected raw bytes".into());
+  };
+  let position = request
+    .headers()
+    .get("x-position")
+    .and_then(|v| v.to_str().ok())
+    .and_then(|v| v.parse().ok())
+    .ok_or("missing write position")?;
+  with_export(&app, |s| s.write(position, bytes))?.map_err(|e| format!("Could not write the video: {e}"))
+}
+
+#[tauri::command]
+fn export_finish(app: State<'_, App>) -> Result<(), String> {
+  let session = export_session(&app).take().ok_or("No export in progress.")?;
+  session.finish().map_err(|e| format!("Could not finish the video: {e}"))
+}
+
+#[tauri::command]
+fn export_abort(app: State<'_, App>) {
+  if let Some(session) = export_session(&app).take() {
+    session.abort();
+  }
 }
 
 #[tauri::command]
@@ -370,6 +446,7 @@ pub fn run() {
         audio,
         obs,
         feed: Mutex::new(None),
+        export: Mutex::new(None),
       });
       Ok(())
     })
@@ -390,6 +467,12 @@ pub fn run() {
       file_play,
       file_pause,
       file_seek,
+      export_begin,
+      export_analysis,
+      export_pcm,
+      export_write,
+      export_finish,
+      export_abort,
       set_mic_device,
       list_profiles,
       get_profile,
