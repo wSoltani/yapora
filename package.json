@@ -9,7 +9,6 @@
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc -b",
-    "preview": "vite preview",
     "app": "tauri dev",
     "app:build": "tauri build",
     "tauri": "tauri"
