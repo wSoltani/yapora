@@ -1,4 +1,6 @@
-import { streamUrl } from "@/lib/native"
+import { Channel } from "@tauri-apps/api/core"
+
+import { inApp, invoke, streamUrl } from "@/lib/native"
 
 export interface LinkStatus {
   status: "idle" | "running" | "denied" | "error"
@@ -12,8 +14,9 @@ type Message =
 const RECONNECT_MS = 1000
 
 /**
- * The WebSocket to the app's local server. Carries analysis frames (binary),
- * mic status and profile revisions (JSON).
+ * Where analysis frames and mic status come from. The editor window gets them
+ * straight from the app over IPC, so it keeps working with OBS output off; OBS
+ * gets them over the local server's WebSocket, along with profile revisions.
  *
  * Frames are not queued: only the newest one is kept, and the render loop
  * reads it whenever it draws. A page that stalls for a moment picks up the
@@ -23,6 +26,8 @@ class AnalysisLink {
   private socket: WebSocket | null = null
   private retry: ReturnType<typeof setTimeout> | undefined
   private wanted = false
+  /** Bumped per IPC subscription, so a stale one's late messages are ignored. */
+  private generation = 0
 
   /** `[rmsDb, sampleRate, ...spectrumDb]`, all pre-gain. */
   frame: Float32Array | null = null
@@ -32,6 +37,11 @@ class AnalysisLink {
   private profileListeners = new Set<(revision: number) => void>()
 
   connect() {
+    if (inApp) {
+      this.subscribe()
+      return
+    }
+
     this.wanted = true
     if (this.socket) return
     clearTimeout(this.retry)
@@ -42,15 +52,13 @@ class AnalysisLink {
 
     socket.onmessage = (event: MessageEvent) => {
       if (event.data instanceof ArrayBuffer) {
-        this.frame = new Float32Array(event.data)
-        this.frameAt = performance.now()
+        this.receiveFrame(event.data)
         return
       }
       const message = JSON.parse(event.data as string) as Message
       if (message.type === "status") {
         const { status, error, deviceMissing } = message
-        for (const listener of this.statusListeners)
-          listener({ status, error, deviceMissing })
+        this.receiveStatus({ status, error, deviceMissing })
       } else if (message.type === "profile") {
         for (const listener of this.profileListeners) listener(message.revision)
       }
@@ -69,7 +77,29 @@ class AnalysisLink {
     }
   }
 
+  /** The app replaces any previous subscription, so this is safe to repeat. */
+  private subscribe() {
+    const generation = ++this.generation
+    const frames = new Channel<ArrayBuffer>((buffer) => {
+      if (generation === this.generation) this.receiveFrame(buffer)
+    })
+    const status = new Channel<LinkStatus>((next) => {
+      if (generation === this.generation) this.receiveStatus(next)
+    })
+    void invoke("audio_subscribe", { frames, status })
+  }
+
+  private receiveFrame(buffer: ArrayBuffer) {
+    this.frame = new Float32Array(buffer)
+    this.frameAt = performance.now()
+  }
+
+  private receiveStatus(status: LinkStatus) {
+    for (const listener of this.statusListeners) listener(status)
+  }
+
   disconnect() {
+    this.generation++
     this.wanted = false
     clearTimeout(this.retry)
     const socket = this.socket

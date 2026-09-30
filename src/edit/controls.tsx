@@ -82,11 +82,13 @@ export function SwitchField({
   label,
   description,
   checked,
+  disabled,
   onChange,
 }: {
   label: string
   description?: string
   checked: boolean
+  disabled?: boolean
   onChange: (checked: boolean) => void
 }) {
   return (
@@ -99,7 +101,11 @@ export function SwitchField({
           </span>
         )}
       </div>
-      <Switch checked={checked} onCheckedChange={onChange} />
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onChange}
+      />
     </div>
   )
 }

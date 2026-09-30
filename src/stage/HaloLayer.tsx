@@ -3,6 +3,8 @@ import * as React from "react"
 import { useFrame } from "@/render/useStageRenderer"
 import type { AvatarConfig, HaloConfig } from "@/store/schema"
 
+import { avatarBox, ShapeOutline } from "./shape"
+
 interface HaloLayerProps {
   halo: HaloConfig
   avatar: AvatarConfig
@@ -11,22 +13,28 @@ interface HaloLayerProps {
 export function HaloLayer({ halo, avatar }: HaloLayerProps) {
   const filterId = `${React.useId()}-halo-glow`
   const groupRef = React.useRef<SVGGElement>(null)
-  const ringRef = React.useRef<SVGCircleElement>(null)
-  const glowRef = React.useRef<SVGCircleElement>(null)
+  const ringRef = React.useRef<SVGPathElement>(null)
+  const glowRef = React.useRef<SVGPathElement>(null)
 
-  /** Radius at rest: the gap is measured from the avatar's edge to the ring's inner edge. */
-  const baseRadius = avatar.radius + halo.gap + halo.thickness / 2
+  const outline = React.useMemo(
+    () =>
+      new ShapeOutline(avatar.shape, avatarBox(avatar), avatar.cornerRadius),
+    [avatar]
+  )
+
+  /** Offset at rest: the gap is measured from the avatar's edge to the ring's inner edge. */
+  const baseOffset = halo.gap + halo.thickness / 2
 
   useFrame(({ level }) => {
     // The floor keeps a little life in the ring during silence so it reads as
     // idle rather than broken.
     const amount = halo.floor + (1 - halo.floor) * level
-    const radius = (baseRadius + amount * halo.reactivity).toFixed(2)
+    const path = outline.path(baseOffset + amount * halo.reactivity)
 
-    ringRef.current?.setAttribute("r", radius)
-    glowRef.current?.setAttribute("r", radius)
+    ringRef.current?.setAttribute("d", path)
+    glowRef.current?.setAttribute("d", path)
 
-    // Opacity rides the same envelope as the radius, so the ring brightens and
+    // Opacity rides the same envelope as the size, so the ring brightens and
     // swells together rather than reading as two separate effects.
     const opacity =
       halo.opacityMin + (halo.opacityMax - halo.opacityMin) * amount
@@ -34,6 +42,8 @@ export function HaloLayer({ halo, avatar }: HaloLayerProps) {
   })
 
   if (!halo.enabled) return null
+
+  const restPath = outline.path(baseOffset)
 
   return (
     <g ref={groupRef} data-layer="halo" opacity={halo.opacityMin}>
@@ -57,11 +67,9 @@ export function HaloLayer({ halo, avatar }: HaloLayerProps) {
               <feGaussianBlur stdDeviation={halo.glow} />
             </filter>
           </defs>
-          <circle
+          <path
             ref={glowRef}
-            cx={avatar.center.x}
-            cy={avatar.center.y}
-            r={baseRadius}
+            d={restPath}
             fill="none"
             stroke={halo.color}
             strokeWidth={halo.thickness}
@@ -72,19 +80,17 @@ export function HaloLayer({ halo, avatar }: HaloLayerProps) {
       )}
 
       {/*
-        A fixed stroke-width with an animated radius, rather than scaling the
-        whole circle: scaling would thin and thicken the ring as it breathes,
-        which reads as the halo changing weight instead of changing size.
+        The outline is regenerated at each size with a fixed stroke-width,
+        rather than scaling one shape: scaling would thin and thicken the ring
+        as it breathes, and stretch a rectangle's corners unevenly.
       */}
-      <circle
+      <path
         ref={ringRef}
-        cx={avatar.center.x}
-        cy={avatar.center.y}
-        r={baseRadius}
+        d={restPath}
         fill="none"
         stroke={halo.color}
         strokeWidth={halo.thickness}
-        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </g>
   )

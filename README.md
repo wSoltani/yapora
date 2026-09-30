@@ -2,7 +2,8 @@
 
 *yap + aura* — a reactive avatar (PNGTuber) for OBS, as a desktop app.
 
-An image masked into a circle, a halo ring that breathes and brightens with
+An image masked into a shape — circle, square, rectangle or triangle, with
+rounded corners if you like — a halo ring that breathes and brightens with
 your microphone, and a symmetrical spectrum-analyser "mouth" you drag onto your
 avatar's face. The whole composition is one resolution-independent SVG, so it
 stays crisp at any Browser Source size.
@@ -22,7 +23,8 @@ image, crop it, and position the mouth. Settings save as you go.
 Then set up OBS once:
 
 1. **Add a Browser Source** pointed at `http://localhost:4173/?mode=live` —
-   **Profile → OBS source** has a copy button.
+   **Output → OBS** has a copy button. (Stream to OBS is on by default; it can
+   be switched off when you are only making videos.)
 2. **Set width and height to a square** — 1000 × 1000 works well.
 3. **Leave the background transparent** so it composites over your scene.
 
@@ -77,7 +79,8 @@ Tailwind — and the build targets `chrome103`. If you are still seeing black:
 
 ### The avatar renders but never moves
 
-Check **Profile → OBS source** in the app, which names the exact failure:
+Check the **Audio** tab (microphone problems) and **Output → OBS** (server
+problems) in the app, which name the exact failure:
 
 | Message | Cause |
 | --- | --- |
@@ -127,12 +130,13 @@ Other controls worth knowing:
 
 | Tab | What's in it |
 | --- | --- |
-| **Avatar** | Upload, crop, remove; circle size and position; border |
+| **Avatar** | Upload, crop, remove; shape, size, corner radius, position; border |
 | **Halo** | Gap, thickness, reaction amount, resting/peak opacity, colour, glow |
 | **Mouth** | Position and size, bar count, spacing, cap rounding, symmetry, colour, backdrop |
 | **Audio** | Device, gain, test signal, gate, ceiling, attack/release, spectrum |
 | **Stage** | Background, overall scale, avatar motion, frame cap, error badge |
-| **Profile** | Name, export/import, Browser Source URL, microphone status, reset |
+| **Output** | Stream to OBS on/off, Browser Source URL |
+| **Profile** | Name, export/import, reset |
 
 **Backgrounds:** transparent (default, for OBS), black, green (`#00b140`, for
 keying), or a custom colour. The checkerboard behind transparent is edit-mode
@@ -201,8 +205,11 @@ A few decisions worth knowing before changing things:
   pixels. The image is never resampled, so crops stay lossless and re-editable.
 - **Mouth bars animate `y`/`height`, not `scaleY`** — scaling squashes the
   rounded caps into ellipses.
-- **The halo animates `r` with a fixed `stroke-width`**, so the ring keeps
-  constant thickness as it breathes rather than changing weight.
+- **Every avatar shape is a convex polygon with rounded corners**
+  (`src/stage/shape.ts`). Growing one by d is its core polygon swept by
+  radius + d, so the halo regenerates an exact outline each frame with a fixed
+  `stroke-width` — constant thickness, no stretched corners — rather than
+  scaling a shape. A circle is a square rounded all the way.
 - **Frequency bands are bucketed logarithmically.** A linear split would put
   nearly all speech energy in the bottom two or three bars.
 - **The editor is a lazily-loaded chunk**, so a Browser Source in Live mode
@@ -245,6 +252,6 @@ the analyser against known signals.
   would let it keep running in the background.
 - **Crop rotation is deliberately unimplemented**; it complicates deriving the
   crop rectangle that the stage consumes as a viewBox.
-- **The profile schema is at version 2.** `migrateProfile` in
+- **The profile schema is at version 3.** `migrateProfile` in
   `src/store/schema.ts` fills missing fields from defaults rather than failing,
   so a stale profile still opens. Add a step there when changing the shape.

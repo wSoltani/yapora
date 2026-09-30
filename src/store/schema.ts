@@ -8,7 +8,7 @@ import { z } from "zod"
 export const STAGE_SIZE = 1000
 export const STAGE_CENTER = STAGE_SIZE / 2
 
-export const PROFILE_VERSION = 2
+export const PROFILE_VERSION = 3
 
 const hexColor = z.string().regex(/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i)
 
@@ -24,6 +24,9 @@ const CropRect = z.object({
   width: z.number().positive(),
   height: z.number().positive(),
 })
+
+export const AvatarShape = z.enum(["circle", "square", "rectangle", "triangle"])
+export type AvatarShape = z.infer<typeof AvatarShape>
 
 export const AvatarSchema = z.object({
   /** Key into the blob store. The image itself never lives in this JSON. */
@@ -44,7 +47,15 @@ export const AvatarSchema = z.object({
     .default({ crop: { x: 0, y: 0 }, zoom: 1 }),
   /** Derived from the editor state; consumed directly as the nested <svg> viewBox. */
   cropRect: CropRect.nullable().default(null),
-  radius: z.number().min(50).max(480).default(300),
+  shape: AvatarShape.default("circle"),
+  /**
+   * Bounding box in stage units. Circle and square are 1:1 and use `width`
+   * alone; `height` is kept for when the shape is switched back.
+   */
+  width: z.number().min(100).max(960).default(600),
+  height: z.number().min(100).max(960).default(600),
+  /** Fraction of the largest radius the shape can take. Unused by circle. */
+  cornerRadius: z.number().min(0).max(1).default(0.15),
   center: Vec2.default({ x: STAGE_CENTER, y: STAGE_CENTER }),
   /** Ring drawn at the avatar's own edge, independent of the reactive halo. */
   ringWidth: z.number().min(0).max(40).default(0),
@@ -64,7 +75,7 @@ export const HaloSchema = z.object({
    */
   opacityMin: z.number().min(0).max(1).default(0.45),
   opacityMax: z.number().min(0).max(1).default(1),
-  /** Extra radius in stage units at full level. */
+  /** How far the ring grows outward at full level, in stage units. */
   reactivity: z.number().min(0).max(200).default(60),
   /** Floor keeps a little life in the ring during silence. */
   floor: z.number().min(0).max(1).default(0.04),
@@ -216,6 +227,14 @@ export function migrateProfile(input: unknown): Profile {
         opacityMax: halo.opacity,
         opacityMin: Math.min(halo.opacity, 0.45),
       }
+    }
+  }
+
+  // v2 -> v3: avatars gained shapes. The circle's radius becomes its box.
+  if (version < 3 && raw.avatar !== null && typeof raw.avatar === "object") {
+    const { radius, ...avatar } = raw.avatar as Record<string, unknown>
+    if (typeof radius === "number") {
+      raw.avatar = { ...avatar, width: radius * 2, height: radius * 2 }
     }
   }
 

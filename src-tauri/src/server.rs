@@ -7,6 +7,7 @@
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
@@ -14,8 +15,11 @@ use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::get;
 use axum::Router;
+use serde::Serialize;
 use serde_json::json;
 use tauri::AppHandle;
+use tokio::sync::{Mutex, watch};
+use tokio::task::JoinHandle;
 
 use crate::hub::Hub;
 use crate::store::Store;
@@ -28,23 +32,112 @@ struct Ctx {
   app: AppHandle,
   hub: Arc<Hub>,
   store: Arc<Store>,
+  /// Flips to true on stop, so open streams end and the port is released.
+  shutdown: watch::Receiver<bool>,
 }
 
-/// Binds and serves until the app exits. Returns an error only if the port
-/// could not be bound.
-pub async fn serve(app: AppHandle, hub: Arc<Hub>, store: Arc<Store>) -> std::io::Result<()> {
-  // Loopback only: the stream is for OBS on this machine, not the network.
-  let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, PORT));
-  let listener = tokio::net::TcpListener::bind(addr).await?;
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerInfo {
+  pub url: String,
+  pub running: bool,
+  pub error: Option<String>,
+}
 
-  let router = Router::new()
-    .route("/api/profile", get(profile))
-    .route("/api/image/{id}", get(image))
-    .route("/ws", get(ws))
-    .fallback(get(asset))
-    .with_state(Ctx { app, hub, store });
+struct Running {
+  shutdown: watch::Sender<bool>,
+  task: JoinHandle<()>,
+}
 
-  axum::serve(listener, router).await
+/// Starts and stops the OBS server on demand; it only holds the port while
+/// OBS output is switched on.
+pub struct ObsServer {
+  app: AppHandle,
+  hub: Arc<Hub>,
+  store: Arc<Store>,
+  running: Mutex<Option<Running>>,
+  error: Mutex<Option<String>>,
+}
+
+impl ObsServer {
+  pub fn new(app: AppHandle, hub: Arc<Hub>, store: Arc<Store>) -> Self {
+    Self {
+      app,
+      hub,
+      store,
+      running: Mutex::new(None),
+      error: Mutex::new(None),
+    }
+  }
+
+  pub async fn info(&self) -> ServerInfo {
+    ServerInfo {
+      url: format!("http://localhost:{PORT}/?mode=live"),
+      running: self.running.lock().await.is_some(),
+      error: self.error.lock().await.clone(),
+    }
+  }
+
+  /// Binds the port and serves. A no-op if already running.
+  pub async fn start(&self) {
+    let mut running = self.running.lock().await;
+    if running.is_some() {
+      return;
+    }
+
+    // Loopback only: the stream is for OBS on this machine, not the network.
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, PORT));
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+      Ok(listener) => listener,
+      Err(err) => {
+        log::error!("OBS server failed: {err}");
+        *self.error.lock().await = Some(format!(
+          "Could not serve OBS on port {PORT}: {err}. Is another copy of Yapora running?"
+        ));
+        return;
+      }
+    };
+    *self.error.lock().await = None;
+
+    let (shutdown, shutdown_rx) = watch::channel(false);
+    let router = Router::new()
+      .route("/api/profile", get(profile))
+      .route("/api/image/{id}", get(image))
+      .route("/ws", get(ws))
+      .fallback(get(asset))
+      .with_state(Ctx {
+        app: self.app.clone(),
+        hub: Arc::clone(&self.hub),
+        store: Arc::clone(&self.store),
+        shutdown: shutdown_rx.clone(),
+      });
+
+    let mut signal = shutdown_rx;
+    let task = tokio::spawn(async move {
+      let result = axum::serve(listener, router)
+        .with_graceful_shutdown(async move {
+          let _ = signal.wait_for(|stop| *stop).await;
+        })
+        .await;
+      if let Err(err) = result {
+        log::error!("OBS server stopped: {err}");
+      }
+    });
+
+    *running = Some(Running { shutdown, task });
+  }
+
+  /// Stops serving and waits for the port to be released, so switching OBS
+  /// output straight back on can bind it again.
+  pub async fn stop(&self) {
+    let Some(Running { shutdown, task }) = self.running.lock().await.take() else {
+      return;
+    };
+    let _ = shutdown.send(true);
+    if tokio::time::timeout(Duration::from_secs(3), task).await.is_err() {
+      log::warn!("OBS server did not stop in time");
+    }
+  }
 }
 
 async fn profile(State(ctx): State<Ctx>) -> Response {
@@ -88,8 +181,8 @@ async fn asset(State(ctx): State<Ctx>, uri: Uri) -> Response {
   }
 }
 
-/// Pages allowed to open the stream: OBS on this server, the app window, and
-/// the Vite dev server. Any other website the user visits is refused, since
+/// Pages allowed to open the stream: OBS on this server and the Vite dev
+/// server. (The app window gets its feed over IPC instead.) Any other website the user visits is refused, since
 /// the frames are derived from their microphone.
 fn origin_allowed(headers: &HeaderMap) -> bool {
   let Some(origin) = headers.get(header::ORIGIN) else {
@@ -103,21 +196,18 @@ fn origin_allowed(headers: &HeaderMap) -> bool {
     format!("http://localhost:{PORT}"),
     format!("http://127.0.0.1:{PORT}"),
   ];
-  let app = ["http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"];
   let dev = ["http://localhost:5173", "http://127.0.0.1:5173"];
-  own.iter().any(|o| o == origin)
-    || app.contains(&origin)
-    || (tauri::is_dev() && dev.contains(&origin))
+  own.iter().any(|o| o == origin) || (tauri::is_dev() && dev.contains(&origin))
 }
 
 async fn ws(State(ctx): State<Ctx>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
   if !origin_allowed(&headers) {
     return StatusCode::FORBIDDEN.into_response();
   }
-  upgrade.on_upgrade(move |socket| stream(socket, ctx.hub))
+  upgrade.on_upgrade(move |socket| stream(socket, ctx.hub, ctx.shutdown))
 }
 
-async fn stream(mut socket: WebSocket, hub: Arc<Hub>) {
+async fn stream(mut socket: WebSocket, hub: Arc<Hub>, mut shutdown: watch::Receiver<bool>) {
   let mut frames = hub.frames.subscribe();
   let mut status = hub.status.subscribe();
   let mut revision = hub.profile_revision.subscribe();
@@ -148,6 +238,12 @@ async fn stream(mut socket: WebSocket, hub: Arc<Hub>) {
         if changed.is_err() { return; }
         profile_message(*revision.borrow_and_update())
       }
+      // Closing is sent after the select: the guard wait_for returns is not
+      // Send, so it must be gone before the next await.
+      stopped = shutdown.wait_for(|stop| *stop) => {
+        drop(stopped);
+        Message::Close(None)
+      }
       incoming = socket.recv() => match incoming {
         // The page never sends anything meaningful; this arm exists to notice
         // it closing.
@@ -155,7 +251,8 @@ async fn stream(mut socket: WebSocket, hub: Arc<Hub>) {
         _ => return,
       },
     };
-    if socket.send(message).await.is_err() {
+    let closing = matches!(message, Message::Close(_));
+    if socket.send(message).await.is_err() || closing {
       return;
     }
   }

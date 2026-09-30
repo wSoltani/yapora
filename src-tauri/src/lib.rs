@@ -5,34 +5,83 @@ mod store;
 
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
-use tauri::ipc::{InvokeBody, Request, Response};
+use tauri::async_runtime::JoinHandle;
+use tauri::ipc::{Channel, InvokeBody, InvokeResponseBody, Request, Response};
 use tauri::{Manager, State};
 
 use audio::{AudioHandle, DeviceInfo, StartRequest};
 use hub::{AudioStatus, Hub};
-use store::Store;
+use server::{ObsServer, ServerInfo};
+use store::{Settings, Store};
 
 struct App {
   hub: Arc<Hub>,
   store: Arc<Store>,
   audio: AudioHandle,
-  /// Set if the OBS server could not start, so the editor can say why.
-  server_error: Arc<Mutex<Option<String>>>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ServerInfo {
-  url: String,
-  error: Option<String>,
+  obs: Arc<ObsServer>,
+  /// The editor window's audio feed; replaced when the page reloads.
+  feed: Mutex<Option<JoinHandle<()>>>,
 }
 
 #[tauri::command]
-fn server_info(app: State<'_, App>) -> ServerInfo {
-  ServerInfo {
-    url: format!("http://localhost:{}/?mode=live", server::PORT),
-    error: app.server_error.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+async fn server_info(app: State<'_, App>) -> Result<ServerInfo, ()> {
+  Ok(app.obs.info().await)
+}
+
+#[tauri::command]
+fn get_settings(app: State<'_, App>) -> Settings {
+  app.store.read_settings()
+}
+
+/// Switches OBS output on or off, remembers the choice, and reports the
+/// resulting server state.
+#[tauri::command]
+async fn set_obs_enabled(app: State<'_, App>, enabled: bool) -> Result<ServerInfo, String> {
+  let mut settings = app.store.read_settings();
+  settings.obs_enabled = enabled;
+  app.store.write_settings(&settings).map_err(|e| e.to_string())?;
+  if enabled {
+    app.obs.start().await;
+  } else {
+    app.obs.stop().await;
+  }
+  Ok(app.obs.info().await)
+}
+
+/// Streams analysis frames and mic status straight to the editor window over
+/// IPC, so the editor works whether or not OBS output is on.
+#[tauri::command]
+fn audio_subscribe(
+  app: State<'_, App>,
+  frames: Channel<InvokeResponseBody>,
+  status: Channel<AudioStatus>,
+) {
+  let mut frame_rx = app.hub.frames.subscribe();
+  let mut status_rx = app.hub.status.subscribe();
+  let task = tauri::async_runtime::spawn(async move {
+    let _ = status.send(status_rx.borrow_and_update().clone());
+    loop {
+      let sent = tokio::select! {
+        changed = frame_rx.changed() => {
+          if changed.is_err() { return; }
+          let bytes = frame_rx.borrow_and_update().to_vec();
+          frames.send(InvokeResponseBody::Raw(bytes))
+        }
+        changed = status_rx.changed() => {
+          if changed.is_err() { return; }
+          status.send(status_rx.borrow_and_update().clone())
+        }
+      };
+      if sent.is_err() {
+        return;
+      }
+    }
+  });
+  // One editor window: a new subscription means the page reloaded, and the
+  // old feed is talking to a page that no longer exists.
+  let previous = app.feed.lock().unwrap_or_else(|e| e.into_inner()).replace(task);
+  if let Some(previous) = previous {
+    previous.abort();
   }
 }
 
@@ -135,31 +184,31 @@ pub fn run() {
       let hub = Arc::new(Hub::new());
       let store = Arc::new(Store::new(app.path().app_data_dir()?)?);
       let audio = AudioHandle::spawn(Arc::clone(&hub));
-      let server_error = Arc::new(Mutex::new(None));
+      let obs = Arc::new(ObsServer::new(
+        app.handle().clone(),
+        Arc::clone(&hub),
+        Arc::clone(&store),
+      ));
 
-      let handle = app.handle().clone();
-      let (server_hub, server_store) = (Arc::clone(&hub), Arc::clone(&store));
-      let error_slot = Arc::clone(&server_error);
-      tauri::async_runtime::spawn(async move {
-        if let Err(err) = server::serve(handle, server_hub, server_store).await {
-          log::error!("OBS server failed: {err}");
-          *error_slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(format!(
-            "Could not serve OBS on port {}: {err}. Is another copy of Yapora running?",
-            server::PORT
-          ));
-        }
-      });
+      if store.read_settings().obs_enabled {
+        let obs = Arc::clone(&obs);
+        tauri::async_runtime::spawn(async move { obs.start().await });
+      }
 
       app.manage(App {
         hub,
         store,
         audio,
-        server_error,
+        obs,
+        feed: Mutex::new(None),
       });
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
       server_info,
+      get_settings,
+      set_obs_enabled,
+      audio_subscribe,
       audio_devices,
       audio_start,
       audio_configure,

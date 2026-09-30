@@ -1,4 +1,4 @@
-import { inApp, invoke, serverBase } from "@/lib/native"
+import { inApp, invoke } from "@/lib/native"
 
 /**
  * Everything persistent lives on disk, owned by the app — one copy of the look
@@ -12,7 +12,7 @@ import { inApp, invoke, serverBase } from "@/lib/native"
 export async function loadProfile(): Promise<unknown> {
   if (inApp) return invoke<unknown>("get_profile")
 
-  const response = await fetch(`${serverBase}/api/profile`)
+  const response = await fetch("/api/profile")
   if (response.status === 404) return undefined
   if (!response.ok)
     throw new Error(`Profile request failed: ${response.status}`)
@@ -54,9 +54,7 @@ export async function getImage(id: string): Promise<Blob | undefined> {
       return new Blob([bytes], { type: MIME_BY_EXT[ext] ?? "" })
     }
 
-    const response = await fetch(
-      `${serverBase}/api/image/${encodeURIComponent(id)}`
-    )
+    const response = await fetch(`/api/image/${encodeURIComponent(id)}`)
     return response.ok ? await response.blob() : undefined
   } catch {
     return undefined

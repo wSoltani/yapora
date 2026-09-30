@@ -1,5 +1,6 @@
 import {
   AudioLines,
+  Cast,
   CircleUser,
   Layers,
   Settings2,
@@ -19,6 +20,7 @@ import { AudioSection } from "./sections/AudioSection"
 import { AvatarSection } from "./sections/AvatarSection"
 import { HaloSection } from "./sections/HaloSection"
 import { MouthSection } from "./sections/MouthSection"
+import { OutputSection } from "./sections/OutputSection"
 import { ProfileSection } from "./sections/ProfileSection"
 import { StageSection } from "./sections/StageSection"
 
@@ -28,6 +30,7 @@ const TABS = [
   { value: "mouth", label: "Mouth", icon: Smile, Panel: MouthSection },
   { value: "audio", label: "Audio", icon: AudioLines, Panel: AudioSection },
   { value: "stage", label: "Stage", icon: Layers, Panel: StageSection },
+  { value: "output", label: "Output", icon: Cast, Panel: OutputSection },
   {
     value: "profile",
     label: "Profile",
@@ -42,7 +45,7 @@ export function SettingsPanel() {
       defaultValue="avatar"
       className="flex h-full min-h-0 w-full flex-col gap-3"
     >
-      <TabsList className="grid w-full grid-cols-6">
+      <TabsList className="grid w-full grid-cols-7">
         {TABS.map(({ value, label, icon: Icon }) => (
           <Tooltip key={value}>
             <TooltipTrigger

@@ -19,10 +19,24 @@ export function AudioSection() {
   const devices = useAppStore((s) => s.devices)
   const synthetic = useAppStore((s) => s.synthetic)
   const setSynthetic = useAppStore((s) => s.setSynthetic)
+  const micStatus = useAppStore((s) => s.micStatus)
+  const micError = useAppStore((s) => s.micError)
+
+  const failed =
+    micStatus === "denied" || micStatus === "error" || micStatus === "offline"
 
   return (
     <div className="flex flex-col gap-5">
       <LevelMeter gateThreshold={audio.gateThreshold} ceiling={audio.ceiling} />
+
+      {failed && (
+        <div className="rounded-md bg-destructive/10 p-2.5 text-[10px] leading-relaxed text-destructive">
+          Microphone status: <strong>{micStatus}</strong>
+          {micError && (
+            <span className="mt-1 block opacity-90">{micError}</span>
+          )}
+        </div>
+      )}
 
       <Separator />
 

@@ -10,7 +10,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
+
 const PROFILE_FILE: &str = "profile.json";
+const SETTINGS_FILE: &str = "settings.json";
 const IMAGE_DIR: &str = "images";
 
 /// Extensions an image id may carry, with the MIME type each is served as.
@@ -25,6 +28,21 @@ const IMAGE_TYPES: &[(&str, &str)] = &[
   ("svg", "image/svg+xml"),
   ("bin", "application/octet-stream"),
 ];
+
+/// App-wide settings: things about this machine and app rather than about a
+/// look, so they stay put when the profile changes.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Settings {
+  /// Serve the live page and stream to OBS on the local port.
+  pub obs_enabled: bool,
+}
+
+impl Default for Settings {
+  fn default() -> Self {
+    Self { obs_enabled: true }
+  }
+}
 
 pub struct Store {
   root: PathBuf,
@@ -46,6 +64,21 @@ impl Store {
 
   pub fn write_profile(&self, json: &[u8]) -> io::Result<()> {
     write_atomic(&self.root.join(PROFILE_FILE), json)
+  }
+
+  /// Missing or unreadable settings fall back to defaults; a bad file should
+  /// never keep the app from starting.
+  pub fn read_settings(&self) -> Settings {
+    read_optional(&self.root.join(SETTINGS_FILE))
+      .ok()
+      .flatten()
+      .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+      .unwrap_or_default()
+  }
+
+  pub fn write_settings(&self, settings: &Settings) -> io::Result<()> {
+    let json = serde_json::to_vec_pretty(settings).map_err(io::Error::other)?;
+    write_atomic(&self.root.join(SETTINGS_FILE), &json)
   }
 
   /// Stores an image and returns its id, e.g. `m1abc2-3.png`.

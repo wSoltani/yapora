@@ -3,6 +3,8 @@ import * as React from "react"
 import { useFrame } from "@/render/useStageRenderer"
 import type { AvatarConfig, StageConfig } from "@/store/schema"
 
+import { avatarBox, ShapeOutline } from "./shape"
+
 interface AvatarLayerProps {
   avatar: AvatarConfig
   motion: StageConfig["motion"]
@@ -13,7 +15,10 @@ export function AvatarLayer({ avatar, motion, url }: AvatarLayerProps) {
   const clipId = `${React.useId()}-avatar-clip`
   const groupRef = React.useRef<SVGGElement>(null)
 
-  const { center, radius, cropRect, natural, ringWidth, ringColor } = avatar
+  const { center, cropRect, natural, ringWidth, ringColor } = avatar
+  const box = avatarBox(avatar)
+  const outline = new ShapeOutline(avatar.shape, box, avatar.cornerRadius)
+  const shapePath = outline.path()
 
   /**
    * Motion hook. All three amounts ship at 0, so this resolves to the identity
@@ -46,7 +51,7 @@ export function AvatarLayer({ avatar, motion, url }: AvatarLayerProps) {
     <g ref={groupRef} data-layer="avatar">
       <defs>
         <clipPath id={clipId}>
-          <circle cx={center.x} cy={center.y} r={radius} />
+          <path d={shapePath} />
         </clipPath>
       </defs>
 
@@ -59,10 +64,10 @@ export function AvatarLayer({ avatar, motion, url }: AvatarLayerProps) {
            * re-editable at full quality and scales to any OBS resolution.
            */
           <svg
-            x={center.x - radius}
-            y={center.y - radius}
-            width={radius * 2}
-            height={radius * 2}
+            x={box.cx - box.width / 2}
+            y={box.cy - box.height / 2}
+            width={box.width}
+            height={box.height}
             viewBox={`${cropRect.x} ${cropRect.y} ${cropRect.width} ${cropRect.height}`}
             preserveAspectRatio="xMidYMid slice"
             overflow="hidden"
@@ -77,21 +82,13 @@ export function AvatarLayer({ avatar, motion, url }: AvatarLayerProps) {
             />
           </svg>
         ) : (
-          <circle
-            cx={center.x}
-            cy={center.y}
-            r={radius}
-            fill="currentColor"
-            fillOpacity={0.08}
-          />
+          <path d={shapePath} fill="currentColor" fillOpacity={0.08} />
         )}
       </g>
 
       {ringWidth > 0 && (
-        <circle
-          cx={center.x}
-          cy={center.y}
-          r={radius - ringWidth / 2}
+        <path
+          d={outline.path(-ringWidth / 2)}
           fill="none"
           stroke={ringColor}
           strokeWidth={ringWidth}

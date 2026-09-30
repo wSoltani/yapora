@@ -1,25 +1,46 @@
 import * as React from "react"
-import { Crop, ImageUp, Trash2 } from "lucide-react"
+import {
+  Circle,
+  Crop,
+  ImageUp,
+  RectangleHorizontal,
+  Square,
+  Trash2,
+  Triangle,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { CropDialog } from "@/edit/CropDialog"
 import { ColorField, SectionGroup, SliderField } from "@/edit/controls"
 import { readImageSize } from "@/edit/profileIO"
 import { useAppStore } from "@/store/app"
 import { useProfileStore } from "@/store/profile"
 import { deleteImage, putImage } from "@/store/storage"
-import { STAGE_SIZE } from "@/store/schema"
+import { avatarBox } from "@/stage/shape"
+import { AvatarShape, STAGE_SIZE } from "@/store/schema"
 
-/** Largest centred square of the source, so a fresh upload renders immediately. */
-function centeredSquare(width: number, height: number) {
-  const size = Math.min(width, height)
+const SHAPES = [
+  { value: "circle", label: "Circle", icon: Circle },
+  { value: "square", label: "Square", icon: Square },
+  { value: "rectangle", label: "Rectangle", icon: RectangleHorizontal },
+  { value: "triangle", label: "Triangle", icon: Triangle },
+] as const
+
+/**
+ * Largest centred crop of the source at the shape's proportions, so a fresh
+ * upload renders immediately.
+ */
+function centeredCrop(width: number, height: number, aspect: number) {
+  const cropWidth = Math.min(width, height * aspect)
+  const cropHeight = cropWidth / aspect
   return {
-    x: Math.round((width - size) / 2),
-    y: Math.round((height - size) / 2),
-    width: size,
-    height: size,
+    x: Math.round((width - cropWidth) / 2),
+    y: Math.round((height - cropHeight) / 2),
+    width: Math.round(cropWidth),
+    height: Math.round(cropHeight),
   }
 }
 
@@ -31,6 +52,9 @@ export function AvatarSection() {
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [cropOpen, setCropOpen] = React.useState(false)
 
+  const box = avatarBox(avatar)
+  const locked = avatar.shape === "circle" || avatar.shape === "square"
+
   const handleFile = async (file: File) => {
     try {
       const natural = await readImageSize(file)
@@ -40,7 +64,11 @@ export function AvatarSection() {
       setAvatar({
         imageKey: key,
         natural,
-        cropRect: centeredSquare(natural.width, natural.height),
+        cropRect: centeredCrop(
+          natural.width,
+          natural.height,
+          box.width / box.height
+        ),
         editor: { crop: { x: 0, y: 0 }, zoom: 1 },
       })
 
@@ -112,14 +140,77 @@ export function AvatarSection() {
 
       <Separator />
 
+      <SectionGroup title="Shape">
+        <ToggleGroup
+          value={[avatar.shape]}
+          onValueChange={(value) => {
+            const parsed = AvatarShape.safeParse(value[0])
+            if (parsed.success) setAvatar({ shape: parsed.data })
+          }}
+          className="w-full"
+        >
+          {SHAPES.map(({ value, label, icon: Icon }) => (
+            <ToggleGroupItem
+              key={value}
+              value={value}
+              aria-label={label}
+              className="flex-1"
+            >
+              <Icon />
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+
+        {locked ? (
+          <SliderField
+            label="Size"
+            value={avatar.width}
+            onChange={(width) => setAvatar({ width })}
+            min={100}
+            max={960}
+          />
+        ) : (
+          <>
+            <SliderField
+              label="Width"
+              value={avatar.width}
+              onChange={(width) => setAvatar({ width })}
+              min={100}
+              max={960}
+            />
+            <SliderField
+              label="Height"
+              value={avatar.height}
+              onChange={(height) => setAvatar({ height })}
+              min={100}
+              max={960}
+            />
+          </>
+        )}
+
+        {avatar.shape !== "circle" && (
+          <SliderField
+            label="Corner radius"
+            value={avatar.cornerRadius}
+            onChange={(cornerRadius) => setAvatar({ cornerRadius })}
+            min={0}
+            max={1}
+            step={0.01}
+            precision={2}
+          />
+        )}
+
+        {avatar.imageKey && (
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
+            Changing proportions trims the image to fit. Crop again to reframe
+            it for the new shape.
+          </p>
+        )}
+      </SectionGroup>
+
+      <Separator />
+
       <SectionGroup title="Placement">
-        <SliderField
-          label="Size"
-          value={avatar.radius}
-          onChange={(radius) => setAvatar({ radius })}
-          min={50}
-          max={440}
-        />
         <SliderField
           label="Horizontal"
           value={avatar.center.x}
@@ -160,6 +251,7 @@ export function AvatarSection() {
           open={cropOpen}
           onOpenChange={setCropOpen}
           url={avatarUrl}
+          avatar={avatar}
           editor={avatar.editor}
           onApply={(editor, cropRect) => setAvatar({ editor, cropRect })}
         />
