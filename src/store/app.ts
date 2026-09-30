@@ -1,12 +1,19 @@
 import { create } from "zustand"
 
 import type { EngineStatus } from "@/audio/AudioEngine"
+import type { TrackInfo } from "@/audio/player"
 
 import { getSettings, setMicDevice } from "./storage"
 
 export type AppMode = "edit" | "live"
 
 export type MicStatus = EngineStatus
+
+/**
+ * What drives the avatar: the microphone, the speech-shaped test signal (for
+ * tuning without talking), or an audio file played through the speakers.
+ */
+export type AudioSource = "mic" | "test" | "file"
 
 export interface MicDevice {
   deviceId: string
@@ -28,8 +35,9 @@ interface AppState {
    * the engine waits rather than opening the wrong device first.
    */
   micDevice: string | null | undefined
-  /** Synthetic source lets the visualizer be tuned without mic permission. */
-  synthetic: boolean
+  source: AudioSource
+  /** The file loaded for the "file" source, if any. */
+  track: TrackInfo | null
   /** Which element the edit-mode gizmo is attached to. */
   selection: "mouth" | null
   avatarUrl: string | null
@@ -40,7 +48,8 @@ interface AppState {
   setDevices: (devices: MicDevice[]) => void
   setMicDevice: (deviceId: string | null) => void
   loadSettings: () => Promise<void>
-  setSynthetic: (synthetic: boolean) => void
+  setSource: (source: AudioSource) => void
+  setTrack: (track: TrackInfo | null) => void
   setSelection: (selection: "mouth" | null) => void
   setAvatarUrl: (url: string | null) => void
 }
@@ -62,7 +71,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   micError: null,
   devices: [],
   micDevice: undefined,
-  synthetic: false,
+  source: "mic",
+  track: null,
   selection: null,
   avatarUrl: null,
 
@@ -90,7 +100,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const settings = await getSettings()
     set({ micDevice: settings?.micDevice ?? null })
   },
-  setSynthetic: (synthetic) => set({ synthetic }),
+  setSource: (source) => set({ source }),
+  setTrack: (track) => set({ track }),
   setSelection: (selection) => set({ selection }),
   setAvatarUrl: (avatarUrl) => set({ avatarUrl }),
 }))

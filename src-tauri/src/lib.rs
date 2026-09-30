@@ -10,7 +10,8 @@ use tauri::async_runtime::JoinHandle;
 use tauri::ipc::{Channel, InvokeBody, InvokeResponseBody, Request, Response};
 use tauri::{Manager, State};
 
-use audio::{AudioHandle, DeviceInfo, StartRequest};
+use audio::file::{self, TrackInfo};
+use audio::{AudioHandle, DeviceInfo, SourceKind, StartRequest};
 use hub::{AudioStatus, Hub};
 use server::{ObsServer, ServerInfo};
 use store::{ProfileSummary, Settings, Store, valid_profile_id};
@@ -96,7 +97,7 @@ fn audio_devices() -> Vec<DeviceInfo> {
 async fn audio_start(
   app: State<'_, App>,
   device_id: Option<String>,
-  synthetic: bool,
+  source: SourceKind,
   fft_size: usize,
   smoothing: f32,
 ) -> Result<AudioStatus, ()> {
@@ -105,12 +106,80 @@ async fn audio_start(
       .audio
       .start(StartRequest {
         device_id,
-        synthetic,
+        source,
         fft_size,
         smoothing,
       })
       .await,
   )
+}
+
+/// Decodes an audio file and makes it the file source's track, paused at the
+/// start. Decoding runs off the async runtime; it can take a moment.
+#[tauri::command]
+async fn file_load(app: State<'_, App>, path: String) -> Result<TrackInfo, String> {
+  let track = tauri::async_runtime::spawn_blocking(move || file::decode(path.as_ref()))
+    .await
+    .map_err(|e| e.to_string())??;
+  let info = TrackInfo {
+    name: track.name.clone(),
+    duration: track.duration(),
+    peaks: track.peaks(),
+  };
+  {
+    let mut player = file::lock(&app.audio.player);
+    player.track = Some(Arc::new(track));
+    player.info = Some(info.clone());
+    player.position = 0.0;
+    player.playing = false;
+    player.moved = true;
+  }
+  app.audio.track_loaded();
+  Ok(info)
+}
+
+/// The loaded track, if any — lets a reloaded editor pick up where it was.
+#[tauri::command]
+fn file_info(app: State<'_, App>) -> Option<TrackInfo> {
+  file::lock(&app.audio.player).info.clone()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Transport {
+  position: f64,
+  playing: bool,
+}
+
+fn transport(app: &App) -> Transport {
+  let player = file::lock(&app.audio.player);
+  Transport {
+    position: player.seconds(),
+    playing: player.playing,
+  }
+}
+
+#[tauri::command]
+fn file_transport(app: State<'_, App>) -> Transport {
+  transport(&app)
+}
+
+#[tauri::command]
+async fn file_play(app: State<'_, App>) -> Result<Transport, String> {
+  app.audio.play().await?;
+  Ok(transport(&app))
+}
+
+#[tauri::command]
+fn file_pause(app: State<'_, App>) -> Transport {
+  file::lock(&app.audio.player).playing = false;
+  transport(&app)
+}
+
+#[tauri::command]
+fn file_seek(app: State<'_, App>, seconds: f64) -> Transport {
+  file::lock(&app.audio.player).seek(seconds);
+  transport(&app)
 }
 
 #[tauri::command]
@@ -249,6 +318,7 @@ fn get_image(app: State<'_, App>, id: String) -> Result<Response, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_dialog::init())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -295,6 +365,12 @@ pub fn run() {
       audio_start,
       audio_configure,
       audio_stop,
+      file_load,
+      file_info,
+      file_transport,
+      file_play,
+      file_pause,
+      file_seek,
       set_mic_device,
       list_profiles,
       get_profile,

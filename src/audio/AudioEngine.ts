@@ -1,4 +1,5 @@
 import { invoke, inApp } from "@/lib/native"
+import type { AudioSource } from "@/store/app"
 import type { AudioConfig } from "@/store/schema"
 
 import { buildBandPlan, mirrorBands, reduceBands, type BandPlan } from "./bands"
@@ -70,7 +71,6 @@ class AudioEngine {
   private config: AudioConfig | null = null
   private minDb = -75
   private maxDb = -12
-  private useSynthetic = false
   /** Set when the saved device was absent and the default was used instead. */
   deviceMissing = false
   private planKey = ""
@@ -104,16 +104,16 @@ class AudioEngine {
   }
 
   /**
-   * In the app this opens the microphone; in OBS it only subscribes, since the
-   * app owns the device. Either way, status arrives over the link.
+   * In the app this opens the source — microphone, test signal or file
+   * playback; in OBS it only subscribes, since the app owns the audio. Either
+   * way, status arrives over the link.
    */
   async start(
     config: AudioConfig,
-    synthetic: boolean,
+    source: AudioSource,
     deviceId: string | null
   ) {
     this.config = config
-    this.useSynthetic = synthetic
     this.applyConfig(config)
 
     if (!this.unlink) {
@@ -127,7 +127,7 @@ class AudioEngine {
     try {
       const status = await invoke<LinkStatus>("audio_start", {
         deviceId,
-        synthetic,
+        source,
         fftSize: config.fftSize,
         smoothing: config.smoothing,
       })
@@ -301,10 +301,6 @@ class AudioEngine {
     this.gateOpen = false
     this.bands.fill(0)
     this.emit("idle")
-  }
-
-  get isSynthetic() {
-    return this.useSynthetic
   }
 }
 

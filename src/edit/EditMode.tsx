@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
 import { MouthGizmo } from "@/edit/MouthGizmo"
 import { ProfileSwitcher } from "@/edit/ProfileSwitcher"
+import { TransportBar } from "@/edit/TransportBar"
 import { SettingsPanel } from "@/edit/SettingsPanel"
 import { useViewport } from "@/hooks/useViewport"
 import { Stage } from "@/stage/Stage"
@@ -21,6 +22,8 @@ export function EditMode() {
   const selection = useAppStore((s) => s.selection)
   const setSelection = useAppStore((s) => s.setSelection)
   const setMode = useAppStore((s) => s.setMode)
+  const source = useAppStore((s) => s.source)
+  const track = useAppStore((s) => s.track)
 
   return (
     <div className="flex h-full w-full flex-col gap-3 bg-background p-3 lg:flex-row">
@@ -43,14 +46,16 @@ export function EditMode() {
           <ProfileSwitcher />
         </div>
 
-        <div className="absolute right-3 bottom-3 flex items-center gap-2">
-          <span className="pointer-events-none hidden text-[10px] whitespace-nowrap text-muted-foreground/70 sm:inline">
+        {/* The row itself lets clicks through to the stage and gizmo. */}
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-center justify-end gap-3">
+          {source === "file" && track && <TransportBar track={track} />}
+          <span className="hidden text-[10px] whitespace-nowrap text-muted-foreground/70 sm:inline">
             <Pencil className="mr-1 inline size-2.5" />
             Ctrl/⌘ + E
           </span>
           <Button
             size="sm"
-            className="shadow-lg"
+            className="pointer-events-auto shadow-lg"
             onClick={() => setMode("live")}
           >
             <Eye />

@@ -2,6 +2,8 @@ import * as React from "react"
 
 import { audioEngine } from "@/audio/AudioEngine"
 import { listMicDevices, onDeviceChange } from "@/audio/devices"
+import { loadedTrack } from "@/audio/player"
+import { inApp } from "@/lib/native"
 import { useAppStore } from "@/store/app"
 import { useProfileStore } from "@/store/profile"
 
@@ -13,7 +15,8 @@ import { useProfileStore } from "@/store/profile"
 export function useAudioSession(enabled: boolean) {
   const audio = useProfileStore((s) => s.profile.audio)
   const loaded = useProfileStore((s) => s.loaded)
-  const synthetic = useAppStore((s) => s.synthetic)
+  const source = useAppStore((s) => s.source)
+  const setTrack = useAppStore((s) => s.setTrack)
   const micDevice = useAppStore((s) => s.micDevice)
   const loadSettings = useAppStore((s) => s.loadSettings)
   const setMicStatus = useAppStore((s) => s.setMicStatus)
@@ -29,16 +32,21 @@ export function useAudioSession(enabled: boolean) {
     void loadSettings()
   }, [loadSettings])
 
+  // The app keeps a loaded file across page reloads; pick it back up.
+  React.useEffect(() => {
+    if (inApp) void loadedTrack().then(setTrack)
+  }, [setTrack])
+
   // Restarting the stream is only necessary when the source itself changes.
   // Every other setting is applied in place.
   React.useEffect(() => {
     if (!enabled || !loaded || micDevice === undefined) return
     void audioEngine.start(
       useProfileStore.getState().profile.audio,
-      synthetic,
+      source,
       micDevice
     )
-  }, [enabled, loaded, synthetic, micDevice])
+  }, [enabled, loaded, source, micDevice])
 
   React.useEffect(() => {
     if (!enabled) return

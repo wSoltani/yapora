@@ -1,11 +1,13 @@
-//! Native microphone capture and analysis.
+//! Native audio sources — microphone, test signal, audio file — and their
+//! analysis.
 //!
-//! One dedicated thread owns the cpal stream (it is not `Send` on every
+//! One dedicated thread owns the cpal streams (they are not `Send` on every
 //! platform) and runs the analysis at a fixed rate. Each tick publishes a frame
 //! to the hub, which fans it out to the editor and to OBS alike — OBS never
 //! touches the microphone itself, so it needs no launch flags or permissions.
 
 mod analyser;
+pub mod file;
 mod synthetic;
 
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -16,11 +18,12 @@ use std::time::{Duration, Instant};
 use axum::body::Bytes;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{ErrorKind, FromSample, SampleFormat, SizedSample};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
 use crate::hub::{AudioStatus, Hub};
-use analyser::Analyser;
+use analyser::{Analyser, MAX_FFT_SIZE};
+use file::SharedPlayer;
 use synthetic::Synthetic;
 
 /// Analysis rate. The page smooths per frame on top of this, so it animates at
@@ -38,9 +41,17 @@ pub struct DeviceInfo {
   pub label: String,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceKind {
+  Mic,
+  Test,
+  File,
+}
+
 pub struct StartRequest {
   pub device_id: Option<String>,
-  pub synthetic: bool,
+  pub source: SourceKind,
   pub fft_size: usize,
   pub smoothing: f32,
 }
@@ -48,22 +59,46 @@ pub struct StartRequest {
 enum Command {
   Start(StartRequest, oneshot::Sender<AudioStatus>),
   Configure { fft_size: usize, smoothing: f32 },
+  /// A file finished loading; if it is the current source, it is now live.
+  TrackLoaded,
+  /// Start file playback, reopening the speakers first if they failed.
+  Play(oneshot::Sender<Result<(), String>>),
   Stop,
 }
 
 #[derive(Clone)]
 pub struct AudioHandle {
   tx: mpsc::Sender<Command>,
+  /// The loaded file and its transport, driven directly by the commands.
+  pub player: SharedPlayer,
 }
 
 impl AudioHandle {
   pub fn spawn(hub: Arc<Hub>) -> Self {
     let (tx, rx) = mpsc::channel();
+    let player = SharedPlayer::default();
+    let worker_player = Arc::clone(&player);
     thread::Builder::new()
       .name("yapora-audio".into())
-      .spawn(move || Worker::new(hub).run(rx))
+      .spawn(move || Worker::new(hub, worker_player).run(rx))
       .expect("failed to spawn audio thread");
-    Self { tx }
+    Self { tx, player }
+  }
+
+  pub fn track_loaded(&self) {
+    let _ = self.tx.send(Command::TrackLoaded);
+  }
+
+  /// Plays the loaded file. Fails only if the speakers cannot be opened.
+  pub async fn play(&self) -> Result<(), String> {
+    let (reply, done) = oneshot::channel();
+    self
+      .tx
+      .send(Command::Play(reply))
+      .map_err(|_| "The audio thread has stopped.".to_string())?;
+    done
+      .await
+      .unwrap_or_else(|_| Err("The audio thread has stopped.".into()))
   }
 
   /// Starts (or restarts) capture and resolves once the stream is open or has
@@ -125,10 +160,16 @@ enum Source {
     generator: Synthetic,
     last: Instant,
   },
+  File {
+    /// Playback. `None` if the speakers could not be opened; analysis of the
+    /// file (seeking, the paused preview) still works, and play retries.
+    stream: Option<cpal::Stream>,
+  },
 }
 
 struct Worker {
   hub: Arc<Hub>,
+  player: SharedPlayer,
   analyser: Analyser,
   source: Source,
   samples: Vec<f32>,
@@ -136,9 +177,10 @@ struct Worker {
 }
 
 impl Worker {
-  fn new(hub: Arc<Hub>) -> Self {
+  fn new(hub: Arc<Hub>, player: SharedPlayer) -> Self {
     Self {
       hub,
+      player,
       analyser: Analyser::new(2048, 0.6),
       source: Source::None,
       samples: Vec::new(),
@@ -178,6 +220,14 @@ impl Worker {
         fft_size,
         smoothing,
       } => self.analyser.configure(fft_size, smoothing),
+      Command::TrackLoaded => {
+        if matches!(self.source, Source::File { .. }) {
+          self.hub.set_status(self.file_status(None));
+        }
+      }
+      Command::Play(reply) => {
+        let _ = reply.send(self.play());
+      }
       Command::Stop => {
         self.source = Source::None;
         self.analyser.reset();
@@ -192,13 +242,34 @@ impl Worker {
     self.source = Source::None;
     self.analyser.reset();
     self.analyser.configure(request.fft_size, request.smoothing);
+    // Switching sources never leaves a file playing in the background, and
+    // coming back to it resumes paused at the same spot.
+    {
+      let mut player = file::lock(&self.player);
+      player.playing = false;
+      player.moved = true;
+    }
 
-    if request.synthetic {
-      self.source = Source::Synthetic {
-        generator: Synthetic::new(48_000.0),
-        last: Instant::now(),
-      };
-      return running(false);
+    match request.source {
+      SourceKind::Mic => {}
+      SourceKind::Test => {
+        self.source = Source::Synthetic {
+          generator: Synthetic::new(48_000.0),
+          last: Instant::now(),
+        };
+        return running(false);
+      }
+      SourceKind::File => {
+        // A failure to open the speakers here is not fatal: they are often
+        // briefly unavailable while Windows switches devices, and play
+        // tries again.
+        let (stream, error) = match file::open_output(&self.player) {
+          Ok(stream) => (Some(stream), None),
+          Err(err) => (None, Some(speakers_error(&err))),
+        };
+        self.source = Source::File { stream };
+        return self.file_status(error);
+      }
     }
 
     let host = cpal::default_host();
@@ -231,6 +302,41 @@ impl Worker {
     }
   }
 
+  /// Status for the file source: speakers failing takes precedence, then
+  /// whether there is anything loaded to play.
+  fn file_status(&self, error: Option<String>) -> AudioStatus {
+    if let Source::File { stream: None } = &self.source {
+      return error_status(error.unwrap_or_else(|| {
+        "Couldn't open your speakers. Press play to try again.".into()
+      }));
+    }
+    if file::lock(&self.player).track.is_some() {
+      running(false)
+    } else {
+      // Nothing to play yet; the file picker is the next step.
+      AudioStatus::idle()
+    }
+  }
+
+  fn play(&mut self) -> Result<(), String> {
+    let Source::File { stream } = &mut self.source else {
+      return Err("Switch the source to Audio file first.".into());
+    };
+    if stream.is_none() {
+      match file::open_output(&self.player) {
+        Ok(opened) => *stream = Some(opened),
+        Err(err) => {
+          let message = speakers_error(&err);
+          self.hub.set_status(error_status(message.clone()));
+          return Err(message);
+        }
+      }
+      self.hub.set_status(self.file_status(None));
+    }
+    file::lock(&self.player).play();
+    Ok(())
+  }
+
   fn tick(&mut self) {
     self.samples.clear();
     let sample_rate = match &mut self.source {
@@ -257,6 +363,26 @@ impl Worker {
         let count = (elapsed * generator.sample_rate()) as usize;
         generator.fill(&mut self.samples, count);
         generator.sample_rate()
+      }
+      Source::File { .. } => {
+        let mut player = file::lock(&self.player);
+        let Some(track) = player.track.clone() else {
+          return;
+        };
+        if player.moved {
+          // Refill from just before the playhead, so a seek while paused
+          // shows the avatar as it looks at that moment.
+          player.moved = false;
+          player.pending.clear();
+          let end = (player.position as usize).min(track.frames);
+          let start = end.saturating_sub(MAX_FFT_SIZE);
+          drop(player);
+          self.analyser.reset();
+          self.samples.extend((start..end).map(|f| track.mono(f)));
+        } else {
+          std::mem::swap(&mut self.samples, &mut player.pending);
+        }
+        track.rate as f32
       }
     };
 
@@ -347,6 +473,14 @@ where
       }
     },
     None,
+  )
+}
+
+/// Names the likely fix, with the system's own wording kept for diagnosis.
+fn speakers_error(err: &cpal::Error) -> String {
+  format!(
+    "Couldn't open your speakers. Check that an output device is connected and that no other app has exclusive control of it, then press play to try again.
+({err})"
   )
 }
 

@@ -122,8 +122,12 @@ The **Audio** tab has a live input meter with the noise gate (blue) and ceiling
 
 Get those two right and everything else is taste.
 
-**Test signal** swaps the microphone for a speech-shaped tone, so you can tune
-the look without talking — or without a microphone at all. OBS sees it too.
+**Source** picks what drives the avatar: the **microphone**, a speech-shaped
+**test signal** (tune without talking, or without a mic at all), or an **audio
+file** — a voiceover, say. A file plays through your speakers with a player on
+the stage: play/pause (or Space), and click or drag the waveform to seek.
+Pausing freezes the avatar at that moment, and seeking while paused shows the
+avatar as it looks there. OBS sees all three.
 
 Other controls worth knowing:
 
@@ -143,7 +147,7 @@ Other controls worth knowing:
 | **Avatar** | Upload, crop, remove; shape, size, corner radius, position; border |
 | **Halo** | Gap, thickness, reaction amount, resting/peak opacity, colour, glow |
 | **Mouth** | Position and size, bar count, spacing, cap rounding, symmetry, colour, backdrop |
-| **Audio** | Device, gain, test signal, gate, ceiling, attack/release, spectrum |
+| **Audio** | Source (mic, test signal, audio file), device, gain, gate, ceiling, attack/release, spectrum |
 | **Stage** | Background, overall scale, avatar motion, frame cap, error badge |
 | **Output** | Stream to OBS on/off, Browser Source URL |
 | **Profile** | Name, new/duplicate/delete, export/import, reset |
@@ -166,8 +170,8 @@ profile rather than overwriting one.
 
 A Tauri 2 app. The frontend is React 19 + Vite + Tailwind v4 + shadcn/ui (Base
 UI), Zustand for config, Zod for profile validation and migration. The Rust
-side captures audio with `cpal`, analyses it with `rustfft`, and serves OBS
-with `axum`.
+side captures and plays audio with `cpal`, decodes files with `symphonia`,
+analyses with `rustfft`, and serves OBS with `axum`.
 
 ```
 ┌──────────── Yapora app (Rust) ────────────┐
