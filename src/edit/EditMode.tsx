@@ -4,6 +4,7 @@ import { Eye, Pencil } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
 import { MouthGizmo } from "@/edit/MouthGizmo"
+import { ProfileSwitcher } from "@/edit/ProfileSwitcher"
 import { SettingsPanel } from "@/edit/SettingsPanel"
 import { useViewport } from "@/hooks/useViewport"
 import { Stage } from "@/stage/Stage"
@@ -38,6 +39,10 @@ export function EditMode() {
           />
         )}
 
+        <div className="absolute top-3 left-3">
+          <ProfileSwitcher />
+        </div>
+
         <div className="absolute right-3 bottom-3 flex items-center gap-2">
           <span className="pointer-events-none hidden text-[10px] whitespace-nowrap text-muted-foreground/70 sm:inline">
             <Pencil className="mr-1 inline size-2.5" />
@@ -55,9 +60,6 @@ export function EditMode() {
       </div>
 
       <aside className="flex min-h-0 w-full shrink-0 flex-col gap-3 lg:w-80">
-        <header className="flex items-baseline gap-2 px-0.5">
-          <h1 className="text-sm font-semibold tracking-tight">Yapora</h1>
-        </header>
         <div className="min-h-0 flex-1">
           <SettingsPanel />
         </div>

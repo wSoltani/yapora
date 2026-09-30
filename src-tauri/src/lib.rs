@@ -5,6 +5,7 @@ mod store;
 
 use std::sync::{Arc, Mutex};
 
+use serde::Serialize;
 use tauri::async_runtime::JoinHandle;
 use tauri::ipc::{Channel, InvokeBody, InvokeResponseBody, Request, Response};
 use tauri::{Manager, State};
@@ -12,7 +13,7 @@ use tauri::{Manager, State};
 use audio::{AudioHandle, DeviceInfo, StartRequest};
 use hub::{AudioStatus, Hub};
 use server::{ObsServer, ServerInfo};
-use store::{Settings, Store};
+use store::{ProfileSummary, Settings, Store, valid_profile_id};
 
 struct App {
   hub: Arc<Hub>,
@@ -37,9 +38,10 @@ fn get_settings(app: State<'_, App>) -> Settings {
 /// resulting server state.
 #[tauri::command]
 async fn set_obs_enabled(app: State<'_, App>, enabled: bool) -> Result<ServerInfo, String> {
-  let mut settings = app.store.read_settings();
-  settings.obs_enabled = enabled;
-  app.store.write_settings(&settings).map_err(|e| e.to_string())?;
+  app
+    .store
+    .update_settings(|settings| settings.obs_enabled = enabled)
+    .map_err(|e| e.to_string())?;
   if enabled {
     app.obs.start().await;
   } else {
@@ -122,8 +124,46 @@ fn audio_stop(app: State<'_, App>) {
 }
 
 #[tauri::command]
+fn set_mic_device(app: State<'_, App>, device_id: Option<String>) -> Result<(), String> {
+  app
+    .store
+    .update_settings(|settings| settings.mic_device = device_id)
+    .map(drop)
+    .map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileList {
+  active_id: Option<String>,
+  profiles: Vec<ProfileSummary>,
+}
+
+fn profile_list(store: &Store) -> Result<ProfileList, String> {
+  Ok(ProfileList {
+    active_id: store.active_profile_id(),
+    profiles: store.list_profiles().map_err(|e| e.to_string())?,
+  })
+}
+
+/// Tells OBS to refetch: the active profile changed, or its contents did.
+fn announce_profile(app: &App) {
+  app.hub.profile_revision.send_modify(|revision| *revision += 1);
+}
+
+#[tauri::command]
+fn list_profiles(app: State<'_, App>) -> Result<ProfileList, String> {
+  profile_list(&app.store)
+}
+
+/// The active profile, or `None` when there are none yet and the page should
+/// start from defaults.
+#[tauri::command]
 fn get_profile(app: State<'_, App>) -> Result<Option<serde_json::Value>, String> {
-  let Some(bytes) = app.store.read_profile().map_err(|e| e.to_string())? else {
+  let Some(id) = app.store.active_profile_id() else {
+    return Ok(None);
+  };
+  let Some(bytes) = app.store.read_profile(&id).map_err(|e| e.to_string())? else {
     return Ok(None);
   };
   // A corrupt file reads as "no profile" rather than an error: the page falls
@@ -131,12 +171,53 @@ fn get_profile(app: State<'_, App>) -> Result<Option<serde_json::Value>, String>
   Ok(serde_json::from_slice(&bytes).ok())
 }
 
+/// Saves a profile under its own `id`. Saving one that is not active is
+/// normal: a debounced save can land just after switching away from it.
 #[tauri::command]
 fn set_profile(app: State<'_, App>, profile: serde_json::Value) -> Result<(), String> {
-  let json = serde_json::to_vec_pretty(&profile).map_err(|e| e.to_string())?;
-  app.store.write_profile(&json).map_err(|e| e.to_string())?;
-  app.hub.profile_revision.send_modify(|revision| *revision += 1);
+  let id = profile["id"]
+    .as_str()
+    .filter(|id| valid_profile_id(id))
+    .ok_or("profile has no valid id")?
+    .to_string();
+  app.store.write_profile(&id, &profile).map_err(|e| e.to_string())?;
+  if app.store.active_profile_id().as_deref() == Some(&id) {
+    announce_profile(&app);
+  }
   Ok(())
+}
+
+#[tauri::command]
+fn set_active_profile(app: State<'_, App>, id: String) -> Result<(), String> {
+  if app.store.read_profile(&id).map_err(|e| e.to_string())?.is_none() {
+    return Err("That profile no longer exists.".into());
+  }
+  app
+    .store
+    .update_settings(|settings| settings.active_profile = Some(id))
+    .map_err(|e| e.to_string())?;
+  announce_profile(&app);
+  Ok(())
+}
+
+/// Deletes a profile and any image only it used. If it was active, another
+/// becomes active; the returned list says which.
+#[tauri::command]
+fn delete_profile(app: State<'_, App>, id: String) -> Result<ProfileList, String> {
+  let was_active = app.store.active_profile_id().as_deref() == Some(&id);
+  app.store.delete_profile(&id).map_err(|e| e.to_string())?;
+  if let Err(err) = app.store.collect_images() {
+    log::warn!("image cleanup failed: {err}");
+  }
+  if was_active {
+    let next = app.store.active_profile_id();
+    app
+      .store
+      .update_settings(|settings| settings.active_profile = next)
+      .map_err(|e| e.to_string())?;
+    announce_profile(&app);
+  }
+  profile_list(&app.store)
 }
 
 /// Takes the image as a raw body so a large PNG is not JSON-encoded as an
@@ -164,10 +245,6 @@ fn get_image(app: State<'_, App>, id: String) -> Result<Response, String> {
   }
 }
 
-#[tauri::command]
-fn delete_image(app: State<'_, App>, id: String) -> Result<(), String> {
-  app.store.delete_image(&id).map_err(|e| e.to_string())
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -183,6 +260,11 @@ pub fn run() {
 
       let hub = Arc::new(Hub::new());
       let store = Arc::new(Store::new(app.path().app_data_dir()?)?);
+      // Images replaced since the last run are only swept here and on delete;
+      // see Store::collect_images for why they cannot go immediately.
+      if let Err(err) = store.collect_images() {
+        log::warn!("image cleanup failed: {err}");
+      }
       let audio = AudioHandle::spawn(Arc::clone(&hub));
       let obs = Arc::new(ObsServer::new(
         app.handle().clone(),
@@ -213,11 +295,14 @@ pub fn run() {
       audio_start,
       audio_configure,
       audio_stop,
+      set_mic_device,
+      list_profiles,
       get_profile,
       set_profile,
+      set_active_profile,
+      delete_profile,
       put_image,
       get_image,
-      delete_image,
     ])
     .run(tauri::generate_context!())
     .expect("error while building tauri application");

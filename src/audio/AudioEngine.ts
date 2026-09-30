@@ -107,7 +107,11 @@ class AudioEngine {
    * In the app this opens the microphone; in OBS it only subscribes, since the
    * app owns the device. Either way, status arrives over the link.
    */
-  async start(config: AudioConfig, synthetic: boolean) {
+  async start(
+    config: AudioConfig,
+    synthetic: boolean,
+    deviceId: string | null
+  ) {
     this.config = config
     this.useSynthetic = synthetic
     this.applyConfig(config)
@@ -122,7 +126,7 @@ class AudioEngine {
     this.emit("requesting")
     try {
       const status = await invoke<LinkStatus>("audio_start", {
-        deviceId: config.deviceId,
+        deviceId,
         synthetic,
         fftSize: config.fftSize,
         smoothing: config.smoothing,

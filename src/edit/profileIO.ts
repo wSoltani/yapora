@@ -78,12 +78,6 @@ export async function importProfile(text: string): Promise<Profile> {
   const bundle = parsed as ProfileBundle
   const profile = migrateProfile(bundle.profile)
 
-  // A device ID names hardware on the exporting machine, and older exports
-  // carry browser-salted IDs that match nothing at all. Clearing it lets the
-  // importing machine start on its own default instead of reporting a missing
-  // device.
-  profile.audio.deviceId = null
-
   if (bundle.image) {
     try {
       const response = await fetch(bundle.image)

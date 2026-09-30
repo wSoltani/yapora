@@ -43,6 +43,16 @@ a "Yapora app not running" badge so a still avatar is never a mystery.
 Edits in the app show up in OBS as you make them. There is one copy of your
 settings, on disk, and OBS reads it directly.
 
+### Profiles
+
+Keep several looks — a stream setup, a green-screen video setup, an alt
+character — and switch between them from the dropdown at the top of the
+editor. OBS always shows the active profile, so switching there switches the
+stream. Create, duplicate, rename and delete them in the **Profile** tab.
+
+The microphone choice is shared by every profile, since it names hardware on
+this machine. Gate, gain and the rest of the tuning are per profile.
+
 ### Keyboard
 
 | Key | Action |
@@ -136,7 +146,7 @@ Other controls worth knowing:
 | **Audio** | Device, gain, test signal, gate, ceiling, attack/release, spectrum |
 | **Stage** | Background, overall scale, avatar motion, frame cap, error badge |
 | **Output** | Stream to OBS on/off, Browser Source URL |
-| **Profile** | Name, export/import, reset |
+| **Profile** | Name, new/duplicate/delete, export/import, reset |
 
 **Backgrounds:** transparent (default, for OBS), black, green (`#00b140`, for
 keying), or a custom colour. The checkerboard behind transparent is edit-mode
@@ -146,9 +156,9 @@ only and never renders in Live.
 monitor drives 144 fps for a 60 fps capture. Cap it to 60 or 30 to reclaim the
 headroom on a weak machine.
 
-**Export / import** bundles settings and image into one file — for backups, or
-moving your look to another machine. The microphone choice is not carried over,
-since it names hardware on the exporting machine.
+**Export / import** bundles one profile's settings and image into one file —
+for backups, or moving a look to another machine. Importing always adds a new
+profile rather than overwriting one.
 
 ---
 
@@ -162,7 +172,7 @@ with `axum`.
 ```
 ┌──────────── Yapora app (Rust) ────────────┐
 │ cpal mic ─► analyser (60 Hz) ─► hub ─┐    │
-│ profile.json + images/ ◄─ commands   │    │
+│ profiles/ + images/ ◄─ commands      │    │
 │                  │                   ▼    │
 │                  └──► axum on 127.0.0.1:4173
 └──────────────────────────────┬────────────┘
@@ -246,8 +256,10 @@ the analyser against known signals.
 - **Avatar motion** (bounce, sway, loudness pop) is already wired through the
   render loop and ships at `0`. Turning it on is a settings change, not a
   refactor — see **Stage → Avatar motion**.
-- **`Profile` is shaped for multiple named profiles**; adding a switcher is
-  additive rather than a schema migration.
+- **Profiles are files in `profiles/`**, named by id; `settings.json` holds
+  the active id, the microphone and the OBS switch. Images are shared between
+  duplicated profiles, so they are never deleted on replace — the app sweeps
+  unreferenced ones at startup and after a delete (`Store::collect_images`).
 - **Closing the window quits the app**, which stops OBS's audio. A tray icon
   would let it keep running in the background.
 - **Crop rotation is deliberately unimplemented**; it complicates deriving the

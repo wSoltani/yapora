@@ -114,8 +114,10 @@ export const MouthSchema = z.object({
   backdrop: MouthBackdropSchema.prefault({}),
 })
 
+// The microphone is not here: it names hardware on this machine, so it is an
+// app setting rather than part of a look. Older profiles' `deviceId` is dropped
+// on parse.
 export const AudioSchema = z.object({
-  deviceId: z.string().nullable().default(null),
   /** Input trim in dB, applied before analysis. */
   gain: z.number().min(-24).max(24).default(0),
   /** Below this level the signal reads as silence. */

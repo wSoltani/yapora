@@ -140,8 +140,12 @@ impl ObsServer {
   }
 }
 
+/// The active profile — OBS always renders whichever one the editor shows.
 async fn profile(State(ctx): State<Ctx>) -> Response {
-  match ctx.store.read_profile() {
+  let Some(id) = ctx.store.active_profile_id() else {
+    return StatusCode::NOT_FOUND.into_response();
+  };
+  match ctx.store.read_profile(&id) {
     Ok(Some(json)) => ([(header::CONTENT_TYPE, "application/json")], json).into_response(),
     Ok(None) => StatusCode::NOT_FOUND.into_response(),
     Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),

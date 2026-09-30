@@ -17,6 +17,8 @@ export function AudioSection() {
   const audio = useProfileStore((s) => s.profile.audio)
   const setAudio = useProfileStore((s) => s.setAudio)
   const devices = useAppStore((s) => s.devices)
+  const micDevice = useAppStore((s) => s.micDevice)
+  const setMicDevice = useAppStore((s) => s.setMicDevice)
   const synthetic = useAppStore((s) => s.synthetic)
   const setSynthetic = useAppStore((s) => s.setSynthetic)
   const micStatus = useAppStore((s) => s.micStatus)
@@ -43,9 +45,9 @@ export function AudioSection() {
       <SectionGroup title="Input">
         <Field label="Microphone">
           <Select
-            value={audio.deviceId ?? "default"}
+            value={micDevice ?? "default"}
             onValueChange={(value) =>
-              setAudio({ deviceId: value === "default" ? null : String(value) })
+              setMicDevice(value === "default" ? null : String(value))
             }
             items={[
               { label: "System default", value: "default" },

@@ -14,6 +14,8 @@ export function useAudioSession(enabled: boolean) {
   const audio = useProfileStore((s) => s.profile.audio)
   const loaded = useProfileStore((s) => s.loaded)
   const synthetic = useAppStore((s) => s.synthetic)
+  const micDevice = useAppStore((s) => s.micDevice)
+  const loadSettings = useAppStore((s) => s.loadSettings)
   const setMicStatus = useAppStore((s) => s.setMicStatus)
   const setDevices = useAppStore((s) => s.setDevices)
 
@@ -23,14 +25,20 @@ export function useAudioSession(enabled: boolean) {
     })
   }, [setMicStatus])
 
+  React.useEffect(() => {
+    void loadSettings()
+  }, [loadSettings])
+
   // Restarting the stream is only necessary when the source itself changes.
   // Every other setting is applied in place.
-  const deviceId = audio.deviceId
-
   React.useEffect(() => {
-    if (!enabled || !loaded) return
-    void audioEngine.start(useProfileStore.getState().profile.audio, synthetic)
-  }, [enabled, loaded, synthetic, deviceId])
+    if (!enabled || !loaded || micDevice === undefined) return
+    void audioEngine.start(
+      useProfileStore.getState().profile.audio,
+      synthetic,
+      micDevice
+    )
+  }, [enabled, loaded, synthetic, micDevice])
 
   React.useEffect(() => {
     if (!enabled) return

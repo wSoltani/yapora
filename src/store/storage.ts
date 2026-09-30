@@ -9,6 +9,17 @@ import { inApp, invoke } from "@/lib/native"
  * changing the settings it renders.
  */
 
+export interface ProfileSummary {
+  id: string
+  name: string
+}
+
+export interface ProfileList {
+  activeId: string | null
+  profiles: ProfileSummary[]
+}
+
+/** The active profile: the one the editor shows and OBS renders. */
 export async function loadProfile(): Promise<unknown> {
   if (inApp) return invoke<unknown>("get_profile")
 
@@ -19,9 +30,41 @@ export async function loadProfile(): Promise<unknown> {
   return response.json()
 }
 
+/** Saves a profile under its own id, whether or not it is active. */
 export async function saveProfile(profile: unknown): Promise<void> {
   if (!inApp) return
   await invoke("set_profile", { profile })
+}
+
+export async function listProfiles(): Promise<ProfileList> {
+  if (!inApp) return { activeId: null, profiles: [] }
+  return invoke<ProfileList>("list_profiles")
+}
+
+export async function setActiveProfile(id: string): Promise<void> {
+  await invoke("set_active_profile", { id })
+}
+
+/**
+ * Deletes a profile. The app also deletes any image only it used, and picks
+ * another active profile if this one was active.
+ */
+export async function deleteProfile(id: string): Promise<ProfileList> {
+  return invoke<ProfileList>("delete_profile", { id })
+}
+
+export interface AppSettings {
+  obsEnabled: boolean
+  activeProfile: string | null
+  micDevice: string | null
+}
+
+export async function getSettings(): Promise<AppSettings | null> {
+  return inApp ? invoke<AppSettings>("get_settings") : null
+}
+
+export async function setMicDevice(deviceId: string | null): Promise<void> {
+  await invoke("set_mic_device", { deviceId })
 }
 
 /**
@@ -59,9 +102,4 @@ export async function getImage(id: string): Promise<Blob | undefined> {
   } catch {
     return undefined
   }
-}
-
-export async function deleteImage(id: string): Promise<void> {
-  if (!inApp) return
-  await invoke("delete_image", { id })
 }

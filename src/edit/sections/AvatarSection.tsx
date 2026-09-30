@@ -18,7 +18,7 @@ import { ColorField, SectionGroup, SliderField } from "@/edit/controls"
 import { readImageSize } from "@/edit/profileIO"
 import { useAppStore } from "@/store/app"
 import { useProfileStore } from "@/store/profile"
-import { deleteImage, putImage } from "@/store/storage"
+import { putImage } from "@/store/storage"
 import { avatarBox } from "@/stage/shape"
 import { AvatarShape, STAGE_SIZE } from "@/store/schema"
 
@@ -58,7 +58,6 @@ export function AvatarSection() {
   const handleFile = async (file: File) => {
     try {
       const natural = await readImageSize(file)
-      const previous = avatar.imageKey
       const key = await putImage(file)
 
       setAvatar({
@@ -72,7 +71,6 @@ export function AvatarSection() {
         editor: { crop: { x: 0, y: 0 }, zoom: 1 },
       })
 
-      if (previous) void deleteImage(previous)
       setCropOpen(true)
     } catch (error) {
       toast.error(
@@ -82,7 +80,6 @@ export function AvatarSection() {
   }
 
   const handleRemove = () => {
-    if (avatar.imageKey) void deleteImage(avatar.imageKey)
     setAvatar({ imageKey: null, natural: null, cropRect: null })
   }
 

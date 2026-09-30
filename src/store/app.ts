@@ -2,6 +2,8 @@ import { create } from "zustand"
 
 import type { EngineStatus } from "@/audio/AudioEngine"
 
+import { getSettings, setMicDevice } from "./storage"
+
 export type AppMode = "edit" | "live"
 
 export type MicStatus = EngineStatus
@@ -20,6 +22,12 @@ interface AppState {
   micStatus: MicStatus
   micError: string | null
   devices: MicDevice[]
+  /**
+   * The chosen microphone, an app setting shared by every profile. `null` is
+   * the system default; `undefined` means settings have not loaded yet, so
+   * the engine waits rather than opening the wrong device first.
+   */
+  micDevice: string | null | undefined
   /** Synthetic source lets the visualizer be tuned without mic permission. */
   synthetic: boolean
   /** Which element the edit-mode gizmo is attached to. */
@@ -30,6 +38,8 @@ interface AppState {
   toggleMode: () => void
   setMicStatus: (status: MicStatus, error?: string | null) => void
   setDevices: (devices: MicDevice[]) => void
+  setMicDevice: (deviceId: string | null) => void
+  loadSettings: () => Promise<void>
   setSynthetic: (synthetic: boolean) => void
   setSelection: (selection: "mouth" | null) => void
   setAvatarUrl: (url: string | null) => void
@@ -51,6 +61,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   micStatus: "idle",
   micError: null,
   devices: [],
+  micDevice: undefined,
   synthetic: false,
   selection: null,
   avatarUrl: null,
@@ -71,6 +82,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleMode: () => get().setMode(get().mode === "live" ? "edit" : "live"),
   setMicStatus: (micStatus, micError = null) => set({ micStatus, micError }),
   setDevices: (devices) => set({ devices }),
+  setMicDevice: (micDevice) => {
+    set({ micDevice })
+    void setMicDevice(micDevice)
+  },
+  loadSettings: async () => {
+    const settings = await getSettings()
+    set({ micDevice: settings?.micDevice ?? null })
+  },
   setSynthetic: (synthetic) => set({ synthetic }),
   setSelection: (selection) => set({ selection }),
   setAvatarUrl: (avatarUrl) => set({ avatarUrl }),
