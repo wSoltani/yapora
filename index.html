@@ -2,9 +2,27 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="./vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>vite-app</title>
+    <title>Yapora</title>
+    <style>
+      /*
+        OBS Browser Sources composite over the scene, so the page itself must be
+        transparent. OBS injects Custom CSS that does this, but relying on it
+        means a user who clears that box gets an opaque white rectangle over
+        their stream — so the page asserts it directly.
+      */
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+        background: transparent;
+      }
+      body {
+        overflow: hidden;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
