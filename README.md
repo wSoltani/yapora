@@ -69,8 +69,8 @@ through a chosen playback device, with a player on the stage to play, pause
 **Videos** — with an audio file loaded, **Output → Video** exports it with your
 look: square, 16:9 or 9:16, 30 or 60 fps, MP4 or WebM (only formats your
 machine can encode are offered). It renders frame by frame, so it never drops
-frames and stays in sync. Exports aren't transparent yet: a transparent
-background exports as green screen.
+frames and stays in sync. A transparent background stays transparent in WebM;
+MP4 can't carry transparency, so there it exports as green screen.
 
 **Keyboard** — `Ctrl`/`⌘` + `E` toggles Live mode and `Esc` leaves it. With
 the mouth selected, arrow keys nudge it (`Shift` for 10), and `Shift` + dragging
@@ -127,8 +127,5 @@ and delete the `android/` and `ios/` folders it creates.
 
 - Avatar motion (**Stage → Avatar motion**) moves only the avatar, not the
   mouth or halo, so the mouth drifts off the face with bounce turned up.
-- Transparent WebM export: Chromium's WebCodecs encodes VP9 with alpha and
-  mediabunny supports it (`alpha: "keep"`); the export renderer would just
-  need to stop filling the background. MP4 (H.264) can't carry alpha.
 - Record the mic to a file, to export straight from a recording.
 - A tray icon, so closing the window doesn't stop OBS's feed.

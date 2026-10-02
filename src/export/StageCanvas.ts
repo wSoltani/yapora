@@ -29,6 +29,8 @@ export interface CanvasFrame {
 export class StageCanvas {
   readonly width: number
   readonly height: number
+  /** Whether the encoder keeps alpha, so a transparent stage stays clear. */
+  readonly alpha: boolean
   readonly canvas: OffscreenCanvas
   private ctx: Ctx
   private layer: OffscreenCanvas
@@ -36,9 +38,10 @@ export class StageCanvas {
   private scratch: OffscreenCanvas
   private scratchCtx: Ctx
 
-  constructor(width: number, height: number) {
+  constructor(width: number, height: number, alpha: boolean) {
     this.width = width
     this.height = height
+    this.alpha = alpha
     const make = () => {
       const canvas = new OffscreenCanvas(width, height)
       const ctx = canvas.getContext("2d")
@@ -90,9 +93,12 @@ export class StageCanvas {
   draw(profile: Profile, image: CanvasImageSource | null, frame: CanvasFrame) {
     const ctx = this.ctx
     this.clear(ctx)
-    // A video has no alpha to give: transparent becomes the keying green.
-    ctx.fillStyle = backgroundCss(profile.stage) ?? CHROMA_GREEN
-    ctx.fillRect(0, 0, this.width, this.height)
+    const background = backgroundCss(profile.stage)
+    // Without alpha, transparent becomes the keying green.
+    if (background || !this.alpha) {
+      ctx.fillStyle = background ?? CHROMA_GREEN
+      ctx.fillRect(0, 0, this.width, this.height)
+    }
 
     const outline = new ShapeOutline(
       profile.avatar.shape,

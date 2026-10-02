@@ -40,6 +40,14 @@ const CODECS = {
   webm: { video: "vp9", audio: "opus" },
 } as const
 
+/**
+ * Whether an export comes out transparent: only a transparent stage, and only
+ * WebM — VP9 carries alpha, H.264 in MP4 can't.
+ */
+export function keepsAlpha(profile: Profile, format: VideoFormat) {
+  return format === "webm" && profile.stage.background === "transparent"
+}
+
 /** Analysis frames fetched per IPC round trip. */
 const ANALYSIS_BATCH = 60
 /** Audio is kept about this far ahead of the video, in seconds. */
@@ -132,11 +140,15 @@ export async function exportVideo({
       }),
     })
 
-    const stage = new StageCanvas(width, height)
+    const alpha = keepsAlpha(profile, format)
+    const stage = new StageCanvas(width, height, alpha)
     const video = new CanvasSource(stage.canvas, {
       codec: CODECS[format].video,
       bitrate: QUALITY_HIGH,
       keyFrameInterval: 2,
+      // VP9 alpha is a second stream stored beside the colour, as OBS and
+      // Chromium read it.
+      alpha: alpha ? "keep" : "discard",
     })
     const audio = new AudioSampleSource({
       codec: CODECS[format].audio,
@@ -144,7 +156,7 @@ export async function exportVideo({
       // Opus only encodes at 48 kHz, and 44.1 kHz files are common.
       transform: { sampleRate: 48_000 },
     })
-    output.addVideoTrack(video, { frameRate: fps })
+    output.addVideoTrack(video, { frameRate: fps, canBeTransparent: alpha })
     output.addAudioTrack(audio)
     await output.start()
 

@@ -192,10 +192,13 @@ export function VideoExport() {
         )}
       </Field>
 
-      {background === "transparent" && (
+      {background === "transparent" && format && (
         <p className="text-[10px] leading-relaxed text-muted-foreground">
-          Video has no transparency, so a transparent background exports as
-          green screen (#00b140). Pick another in Stage &rsaquo; Background.
+          {format === "webm"
+            ? "WebM keeps the background transparent. OBS and Chrome show it; some players show black instead."
+            : formats?.includes("webm")
+              ? "MP4 can't be transparent, so the background exports as green screen (#00b140). Choose WebM to keep it transparent."
+              : "MP4 can't be transparent, so the background exports as green screen (#00b140)."}
         </p>
       )}
 
