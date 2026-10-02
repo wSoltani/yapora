@@ -1,6 +1,6 @@
 [package]
 name = "yapora"
-version = "0.0.1"
+version = "0.0.2"
 description = "Reactive PNGTuber avatar for OBS"
 authors = ["Wassim Soltani"]
 license = ""
